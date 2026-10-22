@@ -6,6 +6,7 @@ import json
 import base64
 import asyncio
 import subprocess
+import re
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -26,8 +27,9 @@ except Exception as e:
 
 from server.wan_worker import (
     generate_colab_setup_code,
-    generate_t2v_execution_code,
-    generate_i2v_execution_code
+    generate_cache_cleanup_code,
+    generate_t2v_script,
+    generate_i2v_script
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -52,15 +54,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static folders for video playback & uploads
+if VSPAGENT_AVAILABLE:
+    app.include_router(get_colab_router(), prefix="/colab", tags=["Google Colab"])
+
 app.mount("/videos", StaticFiles(directory=str(VIDEOS_DIR)), name="videos")
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
-if VSPAGENT_AVAILABLE:
-    app.include_router(get_colab_router())
-
-# In-memory job tracker
 jobs: Dict[str, Dict[str, Any]] = {}
+
+class T2VRequest(BaseModel):
+    prompt: str
+    negative_prompt: Optional[str] = "low quality, blurry, distorted, flickering, artifacts"
+    aspect_ratio: str = Field(default="16:9", description="16:9, 9:16, 1:1")
+    duration: int = Field(default=5, description="Video duration in seconds (1-10)")
+    steps: int = Field(default=25, description="Inference steps (15-50)")
+    seed: int = Field(default=42, description="Random seed")
+    model_size: str = Field(default="1.3B", description="1.3B (fast) or 14B (cinematic)")
+
+class StitchRequest(BaseModel):
+    video_filenames: List[str]
+    output_filename: Optional[str] = None
 
 def load_metadata() -> List[Dict[str, Any]]:
     if METADATA_FILE.exists():
@@ -71,51 +84,34 @@ def load_metadata() -> List[Dict[str, Any]]:
             return []
     return []
 
-def save_metadata(items: List[Dict[str, Any]]):
+def save_metadata(data: List[Dict[str, Any]]):
     with open(METADATA_FILE, "w") as f:
-        json.dump(items, f, indent=2)
-
-class T2VRequest(BaseModel):
-    prompt: str = Field(..., description="Prompt describing the scene and motion")
-    negative_prompt: str = Field(default="low quality, blurry, distorted, artifacts", description="Negative prompt")
-    aspect_ratio: str = Field(default="16:9", description="16:9, 9:16, or 1:1")
-    duration: int = Field(default=5, description="Duration in seconds (approx 16 fps)")
-    steps: int = Field(default=30, description="Inference steps")
-    seed: int = Field(default=42, description="Random seed")
-    model_size: str = Field(default="1.3B", description="1.3B or 14B")
-
-class StitchRequest(BaseModel):
-    video_filenames: List[str] = Field(..., description="Ordered list of video files to concatenate")
-    output_filename: Optional[str] = Field(default="final_movie.mp4")
+        json.dump(data, f, indent=2)
 
 @app.get("/api/health")
-async def health_check():
-    colab_status = internal_colab_client.status if internal_colab_client else "unknown"
+async def health():
     return {
-        "status": "online",
-        "service": "Vibe Video Studio",
-        "vspagent": "ready" if VSPAGENT_AVAILABLE else "unavailable",
-        "colab_status": colab_status,
-        "videos_count": len(load_metadata())
+        "status": "healthy",
+        "timestamp": time.time(),
+        "vspagent_available": VSPAGENT_AVAILABLE,
+        "colab_connected": internal_colab_client.is_connected if internal_colab_client else False
     }
 
 @app.get("/api/video/gallery")
 async def get_gallery():
-    meta_list = load_metadata()
-    # Scan filesystem to ensure consistency
-    files = list(VIDEOS_DIR.glob("*.mp4"))
-    file_map = {m.get("filename"): m for m in meta_list if "filename" in m}
-    
+    metadata = {item["filename"]: item for item in load_metadata()}
     gallery = []
-    for f in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
-        fn = f.name
-        info = file_map.get(fn, {})
+    for file in sorted(VIDEOS_DIR.glob("*.mp4"), key=os.path.getmtime, reverse=True):
+        info = metadata.get(file.name, {})
+        poster_name = f"{file.stem}_poster.jpg"
+        has_poster = (VIDEOS_DIR / poster_name).exists()
         gallery.append({
-            "filename": fn,
-            "url": f"/videos/{fn}",
-            "size_mb": round(f.stat().st_size / (1024 * 1024), 2),
-            "created_at": f.stat().st_mtime,
-            "prompt": info.get("prompt", fn.replace(".mp4", "").replace("_", " ")),
+            "filename": file.name,
+            "url": f"/videos/{file.name}",
+            "poster_url": f"/videos/{poster_name}" if has_poster else None,
+            "size_mb": round(file.stat().st_size / (1024 * 1024), 2),
+            "created_at": file.stat().st_mtime,
+            "prompt": info.get("prompt", "AI Generated Video"),
             "aspect_ratio": info.get("aspect_ratio", "16:9"),
             "duration": info.get("duration", 5),
             "type": info.get("type", "T2V")
@@ -132,80 +128,196 @@ async def get_job(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs[job_id]
 
-async def run_video_job(job_id: str, code: str, metadata: Dict[str, Any]):
+async def run_detached_job(
+    job_id: str,
+    script_content: str,
+    output_filename: str,
+    metadata: Dict[str, Any],
+    local_upload_path: Optional[str] = None,
+    remote_upload_path: Optional[str] = None
+):
+    """
+    Production-grade asynchronous detached runner:
+    1. Uploads source file in safe chunks (if I2V).
+    2. Writes job script to Colab disk.
+    3. Spawns job detached via subprocess.Popen (cell returns in < 0.5s).
+    4. Decoupled polling loop monitors log file without blocking the notebook kernel.
+    5. Downloads completed video via safe chunked transfer.
+    """
     job = jobs[job_id]
     job["status"] = "running"
-    job["logs"].append("Dispatching execution payload to Colab A100 GPU...")
-    
-    if not internal_colab_client or internal_colab_client.status != "connected":
+    job["logs"].append("Initiating detached asynchronous GPU job...")
+
+    if not internal_colab_client or not internal_colab_client.is_connected:
         job["status"] = "failed"
-        job["error"] = "Colab runtime is not connected. Please connect via /colab/connect first."
+        job["error"] = "Google Colab is not connected. Please pair in the studio first."
         return
 
     try:
-        res = await internal_colab_client.execute_code(code=code, keep_cell=True, timeout=1200.0)
-        output_text = res.get("output", "")
-        job["logs"].append(f"Execution finished. Output size: {len(output_text)} chars")
+        # Step 1: Upload input image if I2V
+        if local_upload_path and remote_upload_path:
+            job["logs"].append(f"Uploading reference image to Colab at {remote_upload_path}...")
+            await internal_colab_client.upload_file_to_colab(local_upload_path, remote_upload_path)
+            job["logs"].append("Reference image successfully uploaded to Colab disk.")
 
-        # Parse base64 video output
-        if "__VSP_VIDEO_OUTPUT_START__" in output_text and "__VSP_VIDEO_OUTPUT_END__" in output_text:
-            b64_segment = output_text.split("__VSP_VIDEO_OUTPUT_START__")[1].split("__VSP_VIDEO_OUTPUT_END__")[0].strip()
-            video_bytes = base64.b64decode(b64_segment)
-            
-            output_filename = metadata["filename"]
-            target_path = VIDEOS_DIR / output_filename
-            with open(target_path, "wb") as f:
-                f.write(video_bytes)
-            
-            # Save metadata
-            meta_list = load_metadata()
-            meta_list.insert(0, metadata)
-            save_metadata(meta_list)
+        # Step 2: Write script on Colab disk
+        remote_script_path = f"/content/{job_id}.py"
+        remote_log_path = f"/content/{job_id}.log"
+        remote_video_path = f"/content/{output_filename}"
 
-            job["status"] = "completed"
-            job["video_url"] = f"/videos/{output_filename}"
-            job["logs"].append(f"Video saved successfully: {output_filename} ({len(video_bytes)/(1024*1024):.2f} MB)")
-        else:
+        job["logs"].append(f"Staging execution script at {remote_script_path}...")
+        stage_code = f"""
+import os
+with open({remote_script_path!r}, 'w') as f:
+    f.write({script_content!r})
+print('SCRIPT_STAGED:', os.path.getsize({remote_script_path!r}))
+"""
+        stage_res = await internal_colab_client.execute_code(stage_code, keep_cell=False)
+        if stage_res.get("isError"):
+            raise RuntimeError(f"Failed staging script on Colab: {stage_res.get('output')}")
+
+        # Step 3: Spawn detached process on Colab
+        job["logs"].append("Spawning detached GPU process on A100...")
+        spawn_code = f"""
+import subprocess, os
+if os.path.exists({remote_log_path!r}):
+    os.remove({remote_log_path!r})
+if os.path.exists({remote_video_path!r}):
+    os.remove({remote_video_path!r})
+
+proc = subprocess.Popen(
+    ['python3', '-u', {remote_script_path!r}],
+    stdout=open({remote_log_path!r}, 'w'),
+    stderr=subprocess.STDOUT
+)
+print('DETACHED_SPAWN_PID:', proc.pid)
+"""
+        spawn_res = await internal_colab_client.execute_code(spawn_code, keep_cell=False)
+        out = spawn_res.get("output", "")
+        m = re.search(r"DETACHED_SPAWN_PID:\s*(\d+)", out)
+        if not m:
+            raise RuntimeError(f"Failed spawning detached process: {out}")
+        pid = m.group(1)
+        job["logs"].append(f"GPU generation running detached on A100 (PID {pid}). Monitoring progress...")
+
+        # Step 4: Decoupled polling loop
+        start_time = time.time()
+        timeout_seconds = 1800  # 30 minutes max
+        completed = False
+
+        while time.time() - start_time < timeout_seconds:
+            await asyncio.sleep(5)
+            poll_code = f"""
+import os
+log_data = ""
+if os.path.exists({remote_log_path!r}):
+    with open({remote_log_path!r}) as f:
+        log_data = f.read()
+
+done = "=== JOB_SUCCESS:" in log_data
+has_error = "Traceback (most recent call last):" in log_data
+
+print("===POLL_START===")
+print(f"DONE:{{done}}")
+print(f"ERROR:{{has_error}}")
+print("TAIL:")
+print(log_data[-1200:])
+print("===POLL_END===")
+"""
+            try:
+                poll_res = await internal_colab_client.execute_code(poll_code, keep_cell=False)
+                poll_out = poll_res.get("output", "")
+                
+                # Update latest log tail
+                tail_match = re.search(r"TAIL:\n(.*?)===POLL_END===", poll_out, re.S)
+                if tail_match:
+                    recent_tail = tail_match.group(1).strip()
+                    lines = [ln.strip() for ln in recent_tail.split("\n") if ln.strip()]
+                    if lines:
+                        latest_line = lines[-1]
+                        if not job["logs"] or job["logs"][-1] != latest_line:
+                            job["logs"].append(latest_line)
+
+                if "DONE:True" in poll_out:
+                    completed = True
+                    break
+                elif "ERROR:True" in poll_out:
+                    job["status"] = "failed"
+                    job["error"] = f"Script execution error on Colab: {poll_out[-600:]}"
+                    return
+            except Exception as poll_err:
+                job["logs"].append(f"Polling note: {poll_err}")
+
+        if not completed:
             job["status"] = "failed"
-            job["error"] = "Video generation script executed, but video output marker was not found in Colab output."
-            job["logs"].append(f"Tail log: {output_text[-500:]}")
-            
+            job["error"] = "Job timed out after 30 minutes."
+            return
+
+        # Step 5: Download completed video from Colab
+        job["logs"].append(f"Generation successful on A100! Transferring {output_filename} to studio...")
+        target_path = VIDEOS_DIR / output_filename
+        await internal_colab_client.download_file_from_colab(remote_video_path, str(target_path))
+
+        # Generate poster image with ffmpeg
+        poster_path = VIDEOS_DIR / f"{Path(output_filename).stem}_poster.jpg"
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-ss", "00:00:00.2", "-i", str(target_path),
+                "-vframes", "1", "-q:v", "2", str(poster_path)
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print(f"Poster generation note: {e}")
+
+        # Update metadata
+        file_size_mb = round(target_path.stat().st_size / (1024 * 1024), 2)
+        metadata["size_mb"] = file_size_mb
+        metadata_list = load_metadata()
+        metadata_list = [item for item in metadata_list if item.get("filename") != output_filename]
+        metadata_list.insert(0, metadata)
+        save_metadata(metadata_list)
+
+        job["status"] = "completed"
+        job["video_url"] = f"/videos/{output_filename}"
+        job["logs"].append(f"Job complete! Video ready: {output_filename} ({file_size_mb} MB)")
+
     except Exception as e:
         job["status"] = "failed"
         job["error"] = str(e)
-        job["logs"].append(f"Error during dispatch: {e}")
+        job["logs"].append(f"Execution error: {e}")
 
 @app.post("/api/video/setup-colab")
-async def setup_colab(bg: BackgroundTasks):
-    job_id = f"setup-{uuid.uuid4().hex[:6]}"
-    jobs[job_id] = {
-        "id": job_id,
-        "type": "SETUP",
-        "status": "queued",
-        "created_at": time.time(),
-        "logs": ["Queued Colab environment setup..."]
-    }
+async def setup_colab():
+    if not internal_colab_client or not internal_colab_client.is_connected:
+        raise HTTPException(status_code=400, detail="Colab is not connected.")
     code = generate_colab_setup_code()
-    bg.add_task(run_video_job, job_id, code, {"filename": "setup.log"})
-    return {"job_id": job_id, "status": "queued"}
+    res = await internal_colab_client.execute_code(code, keep_cell=False)
+    return {"status": "success", "output": res.get("output", "")}
+
+@app.post("/api/video/clean-cache")
+async def clean_colab_cache():
+    """Cleans old checkpoints from Colab to prevent the 80% disk full warning."""
+    if not internal_colab_client or not internal_colab_client.is_connected:
+        raise HTTPException(status_code=400, detail="Colab is not connected.")
+    code = generate_cache_cleanup_code()
+    res = await internal_colab_client.execute_code(code, keep_cell=False)
+    return {"status": "success", "output": res.get("output", "")}
 
 @app.post("/api/video/generate/t2v")
 async def generate_t2v(req: T2VRequest, bg: BackgroundTasks):
     job_id = f"t2v-{uuid.uuid4().hex[:6]}"
     out_filename = f"t2v_{int(time.time())}_{uuid.uuid4().hex[:4]}.mp4"
     
-    # Map aspect ratio to pixel dimensions (multiples of 16/32 for video diffusion)
     dimensions = {
         "16:9": (832, 480),
         "9:16": (480, 832),
         "1:1": (640, 640)
     }
     width, height = dimensions.get(req.aspect_ratio, (832, 480))
-    num_frames = max(49, req.duration * 16) # 16 fps
+    num_frames = max(49, req.duration * 16)
     
     model_id = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers" if req.model_size == "1.3B" else "Wan-AI/Wan2.1-T2V-14B-Diffusers"
     
-    code = generate_t2v_execution_code(
+    script_content = generate_t2v_script(
         prompt=req.prompt,
         negative_prompt=req.negative_prompt,
         width=width,
@@ -234,20 +346,20 @@ async def generate_t2v(req: T2VRequest, bg: BackgroundTasks):
         "created_at": time.time(),
         "prompt": req.prompt,
         "metadata": metadata,
-        "logs": [f"Job queued for prompt: '{req.prompt}'"]
+        "logs": [f"T2V Job queued: '{req.prompt}' ({req.model_size})"]
     }
     
-    bg.add_task(run_video_job, job_id, code, metadata)
+    bg.add_task(run_detached_job, job_id, script_content, out_filename, metadata)
     return {"job_id": job_id, "status": "queued", "filename": out_filename}
 
 @app.post("/api/video/generate/i2v")
 async def generate_i2v(
     image: UploadFile = File(...),
     prompt: str = Form(...),
-    negative_prompt: str = Form("low quality, blurry, distorted, artifacts"),
-    aspect_ratio: str = Form("16:9"),
+    negative_prompt: str = Form("low quality, blurry, distorted, flickering, artifacts, bad anatomy"),
+    aspect_ratio: str = Form("9:16"),
     duration: int = Form(5),
-    steps: int = Form(30),
+    steps: int = Form(25),
     seed: int = Form(42),
     bg: BackgroundTasks = BackgroundTasks()
 ):
@@ -256,24 +368,24 @@ async def generate_i2v(
     
     # Save input image locally
     img_bytes = await image.read()
-    img_ext = Path(image.filename or "image.jpg").suffix or ".jpg"
+    img_ext = Path(image.filename or "image.png").suffix or ".png"
     img_filename = f"input_{uuid.uuid4().hex[:8]}{img_ext}"
-    img_path = UPLOADS_DIR / img_filename
-    with open(img_path, "wb") as f:
+    local_img_path = UPLOADS_DIR / img_filename
+    with open(local_img_path, "wb") as f:
         f.write(img_bytes)
-        
-    b64_image = base64.b64encode(img_bytes).decode("utf-8")
+
+    remote_img_path = f"/content/uploads/{img_filename}"
     
     dimensions = {
         "16:9": (832, 480),
         "9:16": (480, 832),
         "1:1": (640, 640)
     }
-    width, height = dimensions.get(aspect_ratio, (832, 480))
-    num_frames = max(49, duration * 16)
+    width, height = dimensions.get(aspect_ratio, (480, 832))
+    num_frames = 17 if duration <= 2 else max(17, duration * 8)
     
-    code = generate_i2v_execution_code(
-        image_b64=b64_image,
+    script_content = generate_i2v_script(
+        remote_image_path=remote_img_path,
         prompt=prompt,
         negative_prompt=negative_prompt,
         width=width,
@@ -281,7 +393,7 @@ async def generate_i2v(
         num_frames=num_frames,
         num_inference_steps=steps,
         seed=seed,
-        model_id="Wan-AI/Wan2.1-I2V-14B-720P-Diffusers",
+        model_id="Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
         output_filename=out_filename
     )
     
@@ -291,7 +403,8 @@ async def generate_i2v(
         "prompt": prompt,
         "aspect_ratio": aspect_ratio,
         "duration": duration,
-        "type": "I2V",
+        "type": "I2V-14B",
+        "model_size": "14B",
         "created_at": time.time()
     }
     
@@ -302,10 +415,18 @@ async def generate_i2v(
         "created_at": time.time(),
         "prompt": prompt,
         "metadata": metadata,
-        "logs": [f"I2V job queued with reference image: '{image.filename}'"]
+        "logs": [f"I2V Job queued with reference image: '{image.filename}'"]
     }
     
-    bg.add_task(run_video_job, job_id, code, metadata)
+    bg.add_task(
+        run_detached_job,
+        job_id,
+        script_content,
+        out_filename,
+        metadata,
+        str(local_img_path),
+        remote_img_path
+    )
     return {"job_id": job_id, "status": "queued", "filename": out_filename}
 
 @app.post("/api/video/stitch")
@@ -313,7 +434,6 @@ async def stitch_videos(req: StitchRequest):
     if len(req.video_filenames) < 2:
         raise HTTPException(status_code=400, detail="At least 2 videos are required to stitch.")
 
-    # Create temporary concat list for ffmpeg
     list_file_path = VIDEOS_DIR / f"concat_{uuid.uuid4().hex[:6]}.txt"
     final_output = req.output_filename or f"movie_{int(time.time())}.mp4"
     target_path = VIDEOS_DIR / final_output
@@ -341,7 +461,6 @@ async def stitch_videos(req: StitchRequest):
     if list_file_path.exists():
         list_file_path.unlink()
 
-    # Save to metadata
     meta_list = load_metadata()
     meta_list.insert(0, {
         "filename": final_output,

@@ -139,11 +139,22 @@ def cmd_stitch(args):
     print(f"Movie saved: {res.get('filename')} ({res.get('size_mb')} MB)")
     print(f"URL: {BASE_URL}{res.get('url')}")
 
+def cmd_clean_cache(args):
+    print("=== Cleaning Colab Checkpoint Cache to Free Disk Space ===")
+    res = api_post("/api/video/clean-cache", {})
+    print("Clean result:", res.get("status"))
+    if res.get("output"):
+        print(res.get("output"))
+
 def main():
     parser = argparse.ArgumentParser(
         description="Vibe Video Studio CLI — Manage AI video generation on A100 GPU"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # clean-cache
+    p_clean = subparsers.add_parser("clean-cache", help="Clean unused checkpoints in Colab cache to prevent disk full warnings")
+    p_clean.set_defaults(func=cmd_clean_cache)
 
     # status
     p_status = subparsers.add_parser("status", help="Check backend and Colab A100 GPU health")
