@@ -55,7 +55,7 @@ app.add_middleware(
 )
 
 if VSPAGENT_AVAILABLE:
-    app.include_router(get_colab_router(), prefix="/colab", tags=["Google Colab"])
+    app.include_router(get_colab_router(), tags=["Google Colab"])
 
 app.mount("/videos", StaticFiles(directory=str(VIDEOS_DIR)), name="videos")
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -88,13 +88,81 @@ def save_metadata(data: List[Dict[str, Any]]):
     with open(METADATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
+async def verify_colab_a100() -> str:
+    """
+    STRICT GUARDRAIL: Verifies that Google Colab is connected AND running on an NVIDIA A100 GPU.
+    Execution terminates immediately if an A100 is not detected.
+    """
+    if not internal_colab_client or not internal_colab_client.is_connected:
+        raise HTTPException(
+            status_code=400,
+            detail="Colab is not connected. Please connect to Google Colab with an NVIDIA A100 GPU."
+        )
+
+    probe_code = """
+import subprocess
+try:
+    smi = subprocess.check_output(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader']).decode('utf-8').strip()
+    print('PROBED_GPU:' + smi)
+except Exception as e:
+    print('PROBED_GPU:NONE')
+"""
+    try:
+        res = await internal_colab_client.execute_code(probe_code, keep_cell=False, timeout=15.0)
+        out = res.get("output", "")
+        match = re.search(r"PROBED_GPU:(.*)", out)
+        gpu_name = match.group(1).strip() if match else "NONE"
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed querying Colab GPU: {e}")
+
+    if "A100" not in gpu_name:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"STRICT HARDWARE REQUIREMENT NOT MET: Video generation requires an NVIDIA A100 GPU.\n"
+                f"Currently detected: '{gpu_name}'.\n"
+                f"Execution aborted. Please go to Colab -> Runtime -> Change runtime type -> Select A100 GPU."
+            )
+        )
+
+    # Ensure critical runtime dependencies (ftfy)
+    pkg_code = """
+import sys, subprocess
+try:
+    import ftfy
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "ftfy"])
+"""
+    try:
+        await internal_colab_client.execute_code(pkg_code, keep_cell=False, timeout=30.0)
+    except Exception:
+        pass
+
+    return gpu_name
+
 @app.get("/api/health")
 async def health():
+    gpu = None
+    if internal_colab_client and internal_colab_client.is_connected:
+        try:
+            res = await internal_colab_client.execute_code(
+                "import subprocess; print('GPU:' + subprocess.getoutput('nvidia-smi --query-gpu=name --format=csv,noheader'))",
+                keep_cell=False,
+                timeout=10.0
+            )
+            m = re.search(r"GPU:(.*)", res.get("output", ""))
+            if m:
+                gpu = m.group(1).strip()
+        except Exception:
+            pass
+
     return {
         "status": "healthy",
         "timestamp": time.time(),
         "vspagent_available": VSPAGENT_AVAILABLE,
-        "colab_connected": internal_colab_client.is_connected if internal_colab_client else False
+        "colab_connected": internal_colab_client.is_connected if internal_colab_client else False,
+        "colab_gpu": gpu,
+        "a100_ready": bool(gpu and "A100" in gpu)
     }
 
 @app.get("/api/video/gallery")
@@ -304,6 +372,8 @@ async def clean_colab_cache():
 
 @app.post("/api/video/generate/t2v")
 async def generate_t2v(req: T2VRequest, bg: BackgroundTasks):
+    # Strict Hardware Guardrail: Abort immediately if A100 is not attached
+    gpu_name = await verify_colab_a100()
     job_id = f"t2v-{uuid.uuid4().hex[:6]}"
     out_filename = f"t2v_{int(time.time())}_{uuid.uuid4().hex[:4]}.mp4"
     
@@ -363,6 +433,8 @@ async def generate_i2v(
     seed: int = Form(42),
     bg: BackgroundTasks = BackgroundTasks()
 ):
+    # Strict Hardware Guardrail: Abort immediately if A100 is not attached
+    gpu_name = await verify_colab_a100()
     job_id = f"i2v-{uuid.uuid4().hex[:6]}"
     out_filename = f"i2v_{int(time.time())}_{uuid.uuid4().hex[:4]}.mp4"
     

@@ -4,6 +4,16 @@ This document provides autonomous coding agents (Antigravity, Cursor, Claude Cod
 
 ---
 
+## ⛔ STRICT HARDWARE MANDATE: NVIDIA A100 GPU ONLY
+
+**Antigravity and all autonomous agents MUST strictly obey the following hardware policy:**
+1. **Never generate video without an NVIDIA A100**: Local CPU or Colab CPU/T4/V100 must NEVER be used for video generation. Video diffusion requires the memory bandwidth and bfloat16 tensor cores of the A100.
+2. **Pre-flight Enforcement**: Both `/api/video/generate/t2v` and `/api/video/generate/i2v`, as well as `cli.py generate`, run hardware verification queries (`nvidia-smi`) before staging any job.
+3. **Automatic Rejection**: If Colab is disconnected or running on anything other than an NVIDIA A100, execution **MUST IMMEDIATELY TERMINATE** and output:
+   `"❌ STOPPING EXECUTION: NVIDIA A100 GPU is strictly required for video generation. Please switch to an A100 GPU in Colab (Runtime -> Change runtime type -> A100)."`
+
+---
+
 ## 🎯 System Architecture Overview
 
 * **Compute Worker:** Remote Google Colab instance running an **NVIDIA A100-SXM4 GPU (40 GB VRAM)**.

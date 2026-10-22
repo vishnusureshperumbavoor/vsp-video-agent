@@ -45,9 +45,11 @@ def cmd_status(args):
     health = api_get("/api/health")
     colab = api_get("/colab/status")
 
-    print(f"Backend Service: {health.get('status')} ({health.get('service')})")
-    print(f"vspagent Harness: {health.get('vspagent')}")
-    print(f"Local Videos Count: {health.get('videos_count')}")
+    print(f"Backend Service:  {health.get('status')}")
+    print(f"vspagent Harness: {health.get('vspagent_available')}")
+    print(f"Colab Connected:  {health.get('colab_connected')}")
+    print(f"Detected GPU:     {health.get('colab_gpu') or 'None / CPU'}")
+    print(f"A100 Ready:       {'✅ YES (A100 Verified)' if health.get('a100_ready') else '❌ NO (A100 Required)'}")
     print("-" * 50)
     print(f"Colab Connection: {colab.get('status')}")
     print(f"Colab Message:    {colab.get('message')}")
@@ -67,6 +69,22 @@ def cmd_list(args):
         print()
 
 def cmd_generate(args):
+    print("=== Checking Hardware Pre-flight: NVIDIA A100 GPU ===")
+    health = api_get("/api/health")
+    if not health.get("colab_connected"):
+        print("❌ STOPPING EXECUTION: Google Colab is not connected.")
+        print("👉 Please connect to your Google Colab instance in Chrome first.")
+        sys.exit(1)
+
+    if not health.get("a100_ready"):
+        gpu = health.get("colab_gpu") or "Unknown / CPU"
+        print(f"❌ STOPPING EXECUTION: NVIDIA A100 GPU is strictly required for video generation.")
+        print(f"   Currently detected runtime: {gpu}")
+        print("👉 Please switch to an A100 GPU in Colab:")
+        print("   Colab -> Runtime -> Change runtime type -> Hardware accelerator: GPU -> A100 -> Save.")
+        sys.exit(1)
+
+    print(f"✅ Verified Hardware: {health.get('colab_gpu')}")
     print(f"=== Dispatching Video Generation to Colab A100 ===")
     print(f"Prompt: \"{args.prompt}\"")
     print(f"Model: Wan 2.1 {args.model}")
