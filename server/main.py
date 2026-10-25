@@ -125,9 +125,10 @@ except Exception as e:
             )
         )
 
-    # Ensure critical runtime dependencies (ftfy)
+    # Ensure critical runtime dependencies (ftfy, clean torchao)
     pkg_code = """
 import sys, subprocess
+subprocess.run(["pip", "uninstall", "-y", "torchao"], check=False)
 try:
     import ftfy
 except ImportError:
@@ -142,20 +143,7 @@ except ImportError:
 
 @app.get("/api/health")
 async def health():
-    gpu = None
-    if internal_colab_client and internal_colab_client.is_connected:
-        try:
-            res = await internal_colab_client.execute_code(
-                "import subprocess; print('GPU:' + subprocess.getoutput('nvidia-smi --query-gpu=name --format=csv,noheader'))",
-                keep_cell=False,
-                timeout=10.0
-            )
-            m = re.search(r"GPU:(.*)", res.get("output", ""))
-            if m:
-                gpu = m.group(1).strip()
-        except Exception:
-            pass
-
+    gpu = internal_colab_client.gpu_info if internal_colab_client else None
     return {
         "status": "healthy",
         "timestamp": time.time(),
