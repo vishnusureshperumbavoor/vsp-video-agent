@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Cpu, CheckCircle2, AlertCircle, RefreshCw, Terminal, ExternalLink } from 'lucide-react';
-import { ColabStatus, connectColab } from '../services/api';
+import { ColabStatus, connectColab, probeGpu } from '../services/api';
 
 interface ColabConnectionModalProps {
   isOpen: boolean;
@@ -18,6 +18,7 @@ export const ColabConnectionModal: React.FC<ColabConnectionModalProps> = ({
   const [profiles, setProfiles] = useState<string[]>(['Default', 'Profile 1', 'Profile 2']);
   const [selectedProfile, setSelectedProfile] = useState('Default');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isProbing, setIsProbing] = useState(false);
   const [connectResult, setConnectResult] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +47,20 @@ export const ColabConnectionModal: React.FC<ColabConnectionModalProps> = ({
       setConnectResult(`Connection failed: ${err.message}`);
     } finally {
       setIsConnecting(false);
+    }
+  };
+
+  const handleProbeGpu = async () => {
+    setIsProbing(true);
+    setConnectResult('Probing Colab hardware (keeping cell in notebook)...');
+    try {
+      const res = await probeGpu(true);
+      setConnectResult(`Hardware Verified: ${res.gpu_info || 'Connected'}`);
+      onRefresh();
+    } catch (err: any) {
+      setConnectResult(`Hardware probe failed: ${err.message}`);
+    } finally {
+      setIsProbing(false);
     }
   };
 
@@ -126,6 +141,17 @@ export const ColabConnectionModal: React.FC<ColabConnectionModalProps> = ({
             <RefreshCw className={`w-3.5 h-3.5 ${isConnecting ? 'animate-spin' : ''}`} />
             <span>{isConnecting ? 'Pairing with Colab...' : 'Connect to Colab Runtime'}</span>
           </button>
+
+          {isConnected && (
+            <button
+              onClick={handleProbeGpu}
+              disabled={isProbing}
+              className="w-full py-2 rounded-xl bg-gray-800/90 hover:bg-gray-750 text-indigo-300 hover:text-white font-semibold flex items-center justify-center space-x-2 transition border border-gray-700/80 shadow-md"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isProbing ? 'animate-spin text-indigo-400' : ''}`} />
+              <span>{isProbing ? 'Probing Hardware...' : 'Verify GPU Hardware'}</span>
+            </button>
+          )}
 
           {connectResult && (
             <div className="p-2.5 bg-gray-900 rounded-lg border border-gray-800 font-mono text-[11px] text-gray-300">

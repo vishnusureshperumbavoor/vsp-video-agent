@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -e
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "=========================================================="
+echo "        🎬  Launching Vibe Video Studio Pipeline"
+echo "  React Frontend (5173) + FastAPI Backend (8000)"
+echo "  Google Colab A100/L4 Bridge via vspagent MCP"
+echo "=========================================================="
+
+cleanup() {
+    echo "Stopping servers..."
+    kill $(jobs -p) 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# Start Backend
+"$DIR/backend_start" &
+BACKEND_PID=$!
+
+sleep 1
+
+# Start Frontend
+"$DIR/frontend_start" &
+FRONTEND_PID=$!
+
+wait

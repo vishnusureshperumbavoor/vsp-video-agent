@@ -59,6 +59,13 @@ export async function connectColab(profileDirectory?: string) {
   return res.json();
 }
 
+export async function probeGpu(force: boolean = true) {
+  const res = await fetch(`/colab/probe-gpu?force=${force}`, {
+    method: 'POST',
+  });
+  return res.json();
+}
+
 export async function setupColabEnvironment() {
   const res = await fetch('/api/video/setup-colab', {
     method: 'POST',

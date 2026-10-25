@@ -90,38 +90,38 @@ def save_metadata(data: List[Dict[str, Any]]):
 
 async def verify_colab_a100() -> str:
     """
-    STRICT GUARDRAIL: Verifies that Google Colab is connected AND running on an NVIDIA A100 GPU.
-    Execution terminates immediately if an A100 is not detected.
+    Verifies that Google Colab is connected and running on an NVIDIA GPU (preferably A100 for Wan 2.1 14B).
     """
     if not internal_colab_client or not internal_colab_client.is_connected:
         raise HTTPException(
             status_code=400,
-            detail="Colab is not connected. Please connect to Google Colab with an NVIDIA A100 GPU."
+            detail="Colab is not connected. Please connect to Google Colab with an NVIDIA GPU."
         )
 
     probe_code = """
-import subprocess
+import subprocess, torch
 try:
-    smi = subprocess.check_output(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader']).decode('utf-8').strip()
-    print('PROBED_GPU:' + smi)
+    device = torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE'
+    vram = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 1) if torch.cuda.is_available() else 0
+    print(f'PROBED_GPU:{device} ({vram} GB VRAM)')
 except Exception as e:
     print('PROBED_GPU:NONE')
 """
     try:
-        res = await internal_colab_client.execute_code(probe_code, keep_cell=False, timeout=15.0)
+        res = await internal_colab_client.execute_code(probe_code, keep_cell=True, timeout=20.0)
         out = res.get("output", "")
         match = re.search(r"PROBED_GPU:(.*)", out)
         gpu_name = match.group(1).strip() if match else "NONE"
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed querying Colab GPU: {e}")
 
-    if "A100" not in gpu_name:
+    if gpu_name == "NONE" or "CPU" in gpu_name:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"STRICT HARDWARE REQUIREMENT NOT MET: Video generation requires an NVIDIA A100 GPU.\n"
+                f"GPU NOT DETECTED: Video generation requires an NVIDIA GPU (A100 or L4).\n"
                 f"Currently detected: '{gpu_name}'.\n"
-                f"Execution aborted. Please go to Colab -> Runtime -> Change runtime type -> Select A100 GPU."
+                f"Please go to Colab -> Runtime -> Change runtime type -> Select GPU."
             )
         )
 
@@ -135,7 +135,7 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "ftfy"])
 """
     try:
-        await internal_colab_client.execute_code(pkg_code, keep_cell=False, timeout=30.0)
+        await internal_colab_client.execute_code(pkg_code, keep_cell=True, timeout=30.0)
     except Exception:
         pass
 
@@ -346,7 +346,7 @@ async def setup_colab():
     if not internal_colab_client or not internal_colab_client.is_connected:
         raise HTTPException(status_code=400, detail="Colab is not connected.")
     code = generate_colab_setup_code()
-    res = await internal_colab_client.execute_code(code, keep_cell=False)
+    res = await internal_colab_client.execute_code(code, keep_cell=True)
     return {"status": "success", "output": res.get("output", "")}
 
 @app.post("/api/video/clean-cache")
@@ -355,7 +355,7 @@ async def clean_colab_cache():
     if not internal_colab_client or not internal_colab_client.is_connected:
         raise HTTPException(status_code=400, detail="Colab is not connected.")
     code = generate_cache_cleanup_code()
-    res = await internal_colab_client.execute_code(code, keep_cell=False)
+    res = await internal_colab_client.execute_code(code, keep_cell=True)
     return {"status": "success", "output": res.get("output", "")}
 
 @app.post("/api/video/generate/t2v")
