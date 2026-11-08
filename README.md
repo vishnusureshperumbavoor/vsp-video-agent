@@ -44,6 +44,57 @@
 
 ---
 
+## Wan Animate on JarvisLabs (A100)
+
+The studio can also run **Wan2.2-Animate-14B** on an on-demand JarvisLabs
+**ComfyUI** instance in replacement mode.
+
+- Inputs: `public/uploads/wan_animate/character.jpg` and `driving.mp4`
+- Workflow: `scripts/wan_animate_workflow.json`
+  (replacement mode, relighting LoRA, 6-step lightx2v)
+- Runner: `scripts/wan_animate_runner.py`
+- Required model: `Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors`
+  plus `WanAnimate_relight_lora_fp16.safetensors`
+- Required nodes: ComfyUI core Wan Animate nodes,
+  `comfyui_controlnet_aux`, `ComfyUI-KJNodes`, `ComfyUI-Impact-Pack`,
+  and `ComfyUI-segment-anything-2`
+- Output: `public/videos/wan_animate_*.mp4`
+
+### Setup
+
+```bash
+uv venv .venv --python 3.12
+uv pip install --python .venv/bin/python -r requirements-jarvis.txt
+uv pip install --python .venv/bin/python -e ../vspagent
+cp .env.example .env    # add JARVIS_LABS_API_TOKEN
+```
+
+### Run
+
+```bash
+# Cheap draft: 640x368, capped at 154 frames, 40 GB A100
+.venv/bin/python scripts/wan_animate_runner.py \
+  --video public/uploads/wan_animate/driving.mp4 \
+  --image public/uploads/wan_animate/character.jpg \
+  --gpu A100 --resolution draft --frames 154 --yes
+
+# Preview the cost/plan only
+.venv/bin/python scripts/wan_animate_runner.py \
+  --video public/uploads/wan_animate/driving.mp4 \
+  --image public/uploads/wan_animate/character.jpg \
+  --dry-run
+```
+
+The runner trims the driving clip to `--frames`, compresses it for the
+Jupyter upload limit, removes the unused duplicate `SaveVideo` branch, and
+destroys the instance in `finally`. Use `--keep-instance` / `--machine-id` to
+adopt and reuse an instance. Use `--fs-id` to attach a persistent JarvisLabs
+filesystem so the ~20 GB of models do not need downloading every run.
+
+The workflow processes two 77-frame segments, so it covers roughly the first
+9.6 seconds of a driving clip. Add more `WanAnimateToVideo` segments to cover a
+longer input.
+
 ## 📂 Project Structure
 
 ```

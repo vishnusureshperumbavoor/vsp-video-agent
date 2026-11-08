@@ -107,6 +107,42 @@ Agents with HTTP access can query `http://localhost:8000` directly:
 
 ---
 
+## 🎭 Wan Animate on JarvisLabs
+
+Use `scripts/wan_animate_runner.py` for character replacement/animation, not
+ad-hoc shell commands.
+
+```bash
+# Always inspect the plan/cost first
+.venv/bin/python scripts/wan_animate_runner.py \
+  --video public/uploads/wan_animate/driving.mp4 \
+  --image public/uploads/wan_animate/character.jpg \
+  --gpu A100 --resolution draft --frames 154 --dry-run
+
+# Then run with auto-destroy
+.venv/bin/python scripts/wan_animate_runner.py \
+  --video public/uploads/wan_animate/driving.mp4 \
+  --image public/uploads/wan_animate/character.jpg \
+  --gpu A100 --resolution draft --frames 154 --yes
+```
+
+Rules:
+
+1. **Always cap frames** to the workflow budget (154) before uploading. Never
+   preprocess the whole source clip when only the first segments are used.
+2. **Draft at `--resolution draft`** (640×368). Use `720p` only for a final.
+3. Prefer **`--gpu A100` (40 GB)** or a spot GPU; `A100-80GB` is only for 720p.
+4. Use `--fs-id` with a persistent JarvisLabs filesystem to cache the ~20 GB of
+   models across runs.
+5. Use `--dry-run` to show the estimated INR cost before provisioning.
+6. The runner destroys created instances in `finally`. If it is interrupted,
+   verify with `jl list` and destroy any remaining instance.
+7. Never expose ComfyUI or the JarvisLabs instance publicly. Use Jupyter/SSH
+   only.
+8. Only use character images and driving videos you have rights to use.
+
+---
+
 ## ⚠️ Important Engineering Rules for Agents
 
 1. **Temporal Dimension Rule:** Wan 2.1 requires `num_frames` to strictly follow **`4k + 1`** (e.g., `17`, `33`, `49`, `81`). `cli.py` and `server/wan_worker.py` enforce this automatically.

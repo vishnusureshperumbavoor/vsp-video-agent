@@ -46,3 +46,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Remote job logs and intermediate artifacts
+public/jobs/*
+!public/jobs/.gitkeep
