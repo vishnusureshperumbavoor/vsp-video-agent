@@ -91,14 +91,25 @@ def lan_ip() -> str:
         probe.close()
 
 
-def serve(directory: Path, port: int) -> None:
+def make_server(directory: Path, port: int, bind: str = "0.0.0.0") -> ThreadingHTTPServer:
+    """Bind the range-capable handler to `bind`; port 0 picks a free port."""
     handler = partial(RangeRequestHandler, directory=str(directory))
-    address = lan_ip()
+    return ThreadingHTTPServer((bind, port), handler)
+
+
+def serve(directory: Path, port: int, bind: str = "0.0.0.0") -> None:
+    httpd = make_server(directory, port, bind)
+    loopback = bind in ("127.0.0.1", "localhost")
+    host = "127.0.0.1" if loopback else (lan_ip() if bind == "0.0.0.0" else bind)
     print(f"serving {directory}", flush=True)
-    print(f"  phone (same Wi-Fi):  http://{address}:{port}/", flush=True)
-    print(f"  this machine:        http://127.0.0.1:{port}/", flush=True)
-    print("LAN only. Ctrl-C to stop; never expose this port publicly.", flush=True)
-    with ThreadingHTTPServer(("0.0.0.0", port), handler) as httpd:
+    print(f"  phone:        http://{host}:{port}/", flush=True)
+    if not loopback:
+        print(f"  this machine: http://127.0.0.1:{port}/", flush=True)
+    print(
+        "private network only. Ctrl-C to stop; never expose this port publicly.",
+        flush=True,
+    )
+    with httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -111,8 +122,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--width", type=int, default=40, help="ASCII columns")
     parser.add_argument("--ascii", action="store_true", help="print an ASCII preview")
     parser.add_argument("--json", action="store_true", help="machine-readable listing")
-    parser.add_argument("--serve", action="store_true", help="serve the folder over LAN")
+    parser.add_argument("--serve", action="store_true", help="serve the folder privately")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument(
+        "--bind",
+        default="0.0.0.0",
+        help="address to listen on; your tailscale IP reaches it off-LAN",
+    )
     return parser.parse_args()
 
 
@@ -134,7 +150,7 @@ def main() -> int:
         if not has_content(directory):
             print(f"nothing to serve: {directory} is empty")
             return 1
-        serve(directory, args.port)
+        serve(directory, args.port, args.bind)
         return 0
 
     if not images:

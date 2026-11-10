@@ -185,6 +185,37 @@ Video is served with **byte ranges** (`206 Partial Content`, via
 video without it, and no browser can seek. `ffmpeg -movflags +faststart` is the
 other half — the index has to come before the frames.
 
+### When the phone is not on the same Wi-Fi
+
+The LAN address only exists inside your network. Put both devices on a private
+overlay instead of opening a port:
+
+```bash
+# once, on the laptop and on the phone: same tailnet, both logged in
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+tailscale ip -4                       # e.g. 100.101.102.103
+
+# serve on that address only
+.venv/bin/python scripts/image_preview.py --serve --dir public --bind 100.101.102.103
+# then open http://100.101.102.103:8080/ on the phone, on any network
+```
+
+That is WireGuard: encrypted, authenticated per device, no open ports, and it
+works on cellular. `tailscale serve` is fine too if you want TLS.
+
+**Never** reach for `tailscale funnel`, `cloudflared`, `ngrok`, or a router
+port-forward. All four publish an unauthenticated directory listing — of adult
+content, once the MOSS runner has produced any.
+
+Options that need no server at all:
+
+| Approach | When |
+| :--- | :--- |
+| Syncthing, sharing `public/images/` | you want renders in the phone gallery |
+| `--ascii` / `--json` | no usable network; text is enough to spot a failure |
+| `scp` to a host the phone already reaches | corporate networks that block both |
+
 ---
 
 ## REST API

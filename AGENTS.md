@@ -280,8 +280,10 @@ Rules:
    destroy in `finally`, verify with `jl list` after an interruption.
 8. **Results are verified as text, not pixels.** The operator may be on a phone:
    `python scripts/image_preview.py` lists dimensions and flags blank renders,
-   `--ascii` prints a proof, `--serve` exposes the folder on the LAN. That server
-   is an operator tool — never bind it to a public address or tunnel it.
+   `--ascii` prints a proof, `--serve` exposes the folder on the private network.
+   That server is an operator tool — never bind it to a public address and never
+   put it behind `tailscale funnel`, `cloudflared`, `ngrok` or a port-forward.
+   Off-LAN access is a tailnet plus `--bind <tailscale-ip>`, nothing else.
 
 ---
 

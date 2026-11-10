@@ -7,16 +7,29 @@ output: dimensions, the blank flag, and the ASCII grid shape.
 
 from __future__ import annotations
 
+import http.client
 import json
 import sys
+import threading
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import image_preview as preview  # noqa: E402
+
+
+def request_on(port: int, path: str):
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        return response.status, dict(response.getheaders()), response.read()
+    finally:
+        connection.close()
 
 
 def write_png(path: Path, size=(64, 32), color=(128, 128, 128)) -> Path:
@@ -125,3 +138,28 @@ def test_has_content_rejects_an_empty_folder(tmp_path) -> None:
 
     assert preview.has_content(tmp_path / "empty") is False
     assert preview.has_content(tmp_path / "missing") is False
+
+
+def test_make_server_honours_the_bind_address(tmp_path) -> None:
+    write_png(tmp_path / "one.png")
+    httpd = preview.make_server(tmp_path, 0, "127.0.0.1")
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, _, body = request_on(httpd.server_address[1], "/one.png")
+        assert status == 200
+        assert body[:4] == b"\x89PNG"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_make_server_refuses_a_port_already_taken(tmp_path) -> None:
+    write_png(tmp_path / "one.png")
+    first = preview.make_server(tmp_path, 0, "127.0.0.1")
+    port = first.server_address[1]
+    try:
+        with pytest.raises(OSError):
+            preview.make_server(tmp_path, port, "127.0.0.1")
+    finally:
+        first.server_close()
