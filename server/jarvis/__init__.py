@@ -1,9 +1,7 @@
 """Vendored JarvisLabs harness.
 
-This is the `jarvis` module of `vspagent`, copied into the project so the
-application no longer depends on a sibling editable checkout. The Colab,
-trainer and dataset modules were deliberately left out: this project only uses
-JarvisLabs.
+Copied into the project so the application is self-contained and does not depend
+on a sibling editable checkout. Only the JarvisLabs transport lives here.
 
 Source: https://github.com/vishnusureshperumbavoor/vspagent (v3.3.0).
 Keep `CLIENT_API_VERSION` in sync if you re-vendor.

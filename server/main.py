@@ -1,9 +1,8 @@
-"""Vibe Video Studio API — JarvisLabs-only backend.
+"""VSP Video Agent API — JarvisLabs-only backend.
 
-There is no Google Colab, no MCP browser bridge and no notebook kernel. Every
-GPU operation goes over SSH to a JarvisLabs instance through the vendored
-`server.jarvis` harness. The React UI was removed; drive this with
-`python cli.py` or the REST endpoints below.
+Every GPU operation goes over SSH to a JarvisLabs instance through the vendored
+`server.jarvis` harness. Drive this with `python cli.py` or the REST endpoints
+below; there is no web UI.
 """
 
 import asyncio
@@ -38,7 +37,7 @@ VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
-    title="Vibe Video Studio API",
+    title="VSP Video Agent API",
     description="Wan 2.1 video generation on a JarvisLabs A100",
     version="2.0.0",
 )
@@ -209,7 +208,7 @@ async def run_detached_job(
     try:
         if local_upload_path and remote_upload_path:
             job["logs"].append(f"Uploading reference image to {remote_upload_path}...")
-            await internal_gpu_client.upload_file_to_colab(local_upload_path, remote_upload_path)
+            await internal_gpu_client.upload_file(local_upload_path, remote_upload_path)
             job["logs"].append("Reference image uploaded.")
 
         size = await internal_gpu_client.write_file(remote_script, script_content)
@@ -257,7 +256,7 @@ async def run_detached_job(
 
         job["logs"].append(f"Render complete. Downloading {output_filename}...")
         target_path = VIDEOS_DIR / output_filename
-        ok = await internal_gpu_client.download_file_from_colab(remote_video, str(target_path))
+        ok = await internal_gpu_client.download_file(remote_video, str(target_path))
         if not ok or not target_path.exists():
             job["status"] = "failed"
             job["error"] = "Download failed; the video may still exist on the remote host."

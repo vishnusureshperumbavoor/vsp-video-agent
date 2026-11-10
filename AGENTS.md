@@ -1,11 +1,10 @@
-# 🤖 AGENTS.md — Vibe Video Studio Instruction Manual
+# 🤖 AGENTS.md — VSP Video Agent Instruction Manual
 
 Instructions for autonomous coding agents (Antigravity, Cursor, Claude Code,
 terminal bots) working on this repo.
 
-**This project is JarvisLabs-only and CLI-first.** There is no Google Colab, no
-MCP browser bridge, no notebook kernel and no web UI. Every GPU operation is an
-SSH command against an on-demand JarvisLabs instance.
+**This project is JarvisLabs-only and CLI-first.** Every GPU operation is an SSH
+command against an on-demand JarvisLabs instance, and the app has no web UI.
 
 ---
 
@@ -48,7 +47,7 @@ Never hold a blocking SSH call open for a multi-minute render.
 4. **Download:** fetch the finished MP4 over SCP.
 
 `server/gpu.py` implements this as `write_file` → `spawn` → `read_log` →
-`download_file_from_colab`.
+`download_file`.
 
 ---
 
@@ -174,7 +173,7 @@ Rules:
    I2V script sets `diffusers.pipelines.wan.pipeline_wan_i2v.ftfy = ftfy`.
 4. **Memory management for 14B:** always use `pipe.enable_model_cpu_offload()`
    for 14B models on the 40 GB A100 to guarantee zero OOM risk.
-5. **No Colab code.** Do not reintroduce `colab-mcp`, notebook kernels or
-   browser-automation paths. The transport is SSH only.
+5. **Transport is SSH only.** Do not introduce notebook kernels or
+   browser-automation paths.
 6. **`server/jarvis/` is vendored.** If you change it, update the upstream
    `vspagent` project too, and keep `CLIENT_API_VERSION` in sync.

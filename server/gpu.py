@@ -1,13 +1,8 @@
 """JarvisLabs GPU transport for the video pipeline.
 
-This replaces the former Google Colab MCP client. Everything runs over SSH on a
-JarvisLabs instance, so there is no browser bridge, no notebook kernel and no
-`colab-mcp` pairing step.
-
-The public surface intentionally mirrors what the old Colab client exposed
-(``is_connected``, ``gpu_info``, ``execute_code``, ``upload_file_to_colab``,
-``download_file_from_colab``) so the job runner could be ported with minimal
-churn. The names are kept for compatibility but the semantics are JarvisLabs.
+Everything runs over SSH against a JarvisLabs instance. The public surface is
+``is_connected``, ``gpu_info``, ``execute_code``, ``write_file``, ``spawn``,
+``read_log``, ``upload_file`` and ``download_file``.
 """
 
 from __future__ import annotations
@@ -136,21 +131,21 @@ class JarvisGPU:
         rc, out = await self._arun(f"test -e {shlex.quote(remote_path)} && echo yes || echo no")
         return "yes" in out
 
-    async def upload_file_to_colab(self, local_path: str, remote_path: str) -> bool:
-        """Upload a local file to the GPU box (name kept for call-site compatibility)."""
+    async def upload_file(self, local_path: str, remote_path: str) -> bool:
+        """Upload a local file to the GPU box."""
         parent = str(Path(remote_path).parent)
         await self._arun(f"mkdir -p {shlex.quote(parent)}")
         return await asyncio.to_thread(
             self.client.sync_up, local_path, remote_path=remote_path, instance_id=self._instance_id
         )
 
-    async def download_file_from_colab(self, remote_path: str, local_path: str) -> bool:
-        """Download a file from the GPU box (name kept for call-site compatibility)."""
+    async def download_file(self, remote_path: str, local_path: str) -> bool:
+        """Download a file from the GPU box."""
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
         return await asyncio.to_thread(
             self.client.sync_down, remote_path, local_path=local_path, instance_id=self._instance_id
         )
 
 
-# Shared instance, mirroring the old `internal_colab_client` import style.
+# Shared instance used by the FastAPI job runner.
 internal_gpu_client = JarvisGPU()

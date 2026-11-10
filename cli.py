@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Vibe Video Studio — Command Line Interface for Agents & Developers.
+VSP Video Agent — Command Line Interface for Agents & Developers.
 Zero external dependencies (uses stdlib argparse and urllib).
 """
 
@@ -212,7 +212,7 @@ def api_post(endpoint: str, data: dict):
         sys.exit(1)
 
 def cmd_status(args):
-    print("=== Checking Vibe Video Studio & JarvisLabs GPU Status ===")
+    print("=== Checking VSP Video Agent & JarvisLabs GPU Status ===")
     health = api_get("/api/health")
     gpu = api_get("/api/gpu/status")
 
@@ -336,7 +336,7 @@ def cmd_clean_cache(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Vibe Video Studio CLI — Manage AI video generation on A100 GPU"
+        description="VSP Video Agent CLI — Manage AI video generation on A100 GPU"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
