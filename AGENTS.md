@@ -128,18 +128,38 @@ ad-hoc shell commands.
 
 Rules:
 
-1. **Always cap frames** to the workflow budget (154) before uploading. Never
+1. **Run the pre-flight before provisioning.** `vspagent jarvis doctor --strict`
+   must pass, and the model audit must be clean:
+
+   ```bash
+   vspagent jarvis audit \
+     /home/ComfyUI/models/diffusion_models/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors \
+     --min-size /home/ComfyUI/models/diffusion_models/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors=18000000000
+   ```
+
+   **Never size-check a template model with plain `stat -c %s`.** Template
+   weights are symlinks into the read-only `/home/.sd` mount, so plain `stat`
+   reports the ~37-byte link length, the model looks missing, and the
+   re-download dies with `Read-only file system`. Use `stat -Lc %s`.
+2. **Never kill and start ComfyUI in one shell line.** `pkill -f` matches the
+   shell running the compound command and kills itself before the server
+   launches. Kill by port in one call, spawn with `setsid` in a second call,
+   then `vspagent jarvis wait 8188 --http --path /object_info`.
+3. **Background jobs must use `setsid`** (`setsid nohup cmd > log 2>&1 < /dev/null &`)
+   and must be polled from the log file. Never hold a blocking remote cell open
+   for a multi-minute render.
+4. **Always cap frames** to the workflow budget (154) before uploading. Never
    preprocess the whole source clip when only the first segments are used.
-2. **Draft at `--resolution draft`** (640×368). Use `720p` only for a final.
-3. Prefer **`--gpu A100` (40 GB)** or a spot GPU; `A100-80GB` is only for 720p.
-4. Use `--fs-id` with a persistent JarvisLabs filesystem to cache the ~20 GB of
-   models across runs.
-5. Use `--dry-run` to show the estimated INR cost before provisioning.
-6. The runner destroys created instances in `finally`. If it is interrupted,
+5. **Draft at `--resolution draft`** (640×368). Use `720p` only for a final.
+6. Prefer **`--gpu A100` (40 GB)** or a spot GPU; `A100-80GB` is only for 720p.
+7. Use `--fs-id` with a persistent JarvisLabs filesystem to cache the ~20 GB of
+   models across runs. The runner warns when it provisions without one.
+8. Use `--dry-run` to show the estimated INR cost before provisioning.
+9. The runner destroys created instances in `finally`. If it is interrupted,
    verify with `jl list` and destroy any remaining instance.
-7. Never expose ComfyUI or the JarvisLabs instance publicly. Use Jupyter/SSH
+10. Never expose ComfyUI or the JarvisLabs instance publicly. Use Jupyter/SSH
    only.
-8. Only use character images and driving videos you have rights to use.
+11. Only use character images and driving videos you have rights to use.
 
 ---
 

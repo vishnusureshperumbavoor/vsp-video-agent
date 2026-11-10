@@ -39,33 +39,40 @@ import time
 import urllib.parse
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-WORKFLOW_FILE = ROOT / "scripts" / "wan_animate_workflow.json"
-REMOTE_HELPER = ROOT / "scripts" / "wan_animate_remote.py"
-
-# The sibling vspagent checkout supplies the Jupyter/SSH harness and the
-# existing JarvisLabs token discovery logic.
-VSPAGENT_DIR = ROOT.parent / "vspagent"
-if VSPAGENT_DIR.exists() and str(VSPAGENT_DIR) not in sys.path:
-    sys.path.insert(0, str(VSPAGENT_DIR))
-
 try:
     import requests
 except ImportError as exc:  # pragma: no cover - installation hint
     raise SystemExit("Missing dependency: requests. Run: uv pip install -r requirements-jarvis.txt") from exc
 
 try:
-    from vspagent.jarvis import JarvisLabsClient
-except Exception as exc:  # pragma: no cover - installation hint
-    raise SystemExit(
-        "Missing vspagent. Install it or keep the sibling ../vspagent checkout. "
-        f"Import error: {exc}"
-    ) from exc
-
-try:
     import jarvislabs
 except ImportError as exc:  # pragma: no cover - installation hint
     raise SystemExit("Missing dependency: jarvislabs. Run: uv pip install -r requirements-jarvis.txt") from exc
+
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW_FILE = ROOT / "scripts" / "wan_animate_workflow.json"
+REMOTE_HELPER = ROOT / "scripts" / "wan_animate_remote.py"
+
+# vspagent is optional. The runner only needs it to publish instance metadata
+# into ~/.vspagent/jarvislabs_instances.json so `vspagent jarvis list` can see
+# the box; that write is done directly in _register_state() below. A stale
+# editable vspagent checkout once raised
+#   TypeError: JarvisLabsClient.register_instance() got an unexpected keyword
+#   argument 'password'
+# *after* a GPU was already billing, killing the run. Bookkeeping must never be
+# able to abort a paid job, so this import is best-effort and version-checked.
+VSPAGENT_MIN_API = 3
+VSPAGENT_NOTE = ""
+try:
+    from vspagent.jarvis.client import CLIENT_API_VERSION as _VSPAGENT_API
+
+    if _VSPAGENT_API < VSPAGENT_MIN_API:
+        VSPAGENT_NOTE = (
+            f"vspagent client API v{_VSPAGENT_API} is older than the required "
+            f"v{VSPAGENT_MIN_API}; run `git pull` in ../vspagent (metadata sync skipped)"
+        )
+except Exception as exc:  # pragma: no cover - optional dependency
+    VSPAGENT_NOTE = f"vspagent unavailable ({exc}); metadata sync skipped"
 
 
 REGION_URLS = {
@@ -263,13 +270,39 @@ def _jupyter_get(session, base: str, remote_path: str, local_path: Path) -> None
 
 
 class Remote:
-    def __init__(self, client: JarvisLabsClient, machine_id: str) -> None:
-        self.client = client
+    def __init__(self, machine_id: str, host: str = "") -> None:
         self.machine_id = str(machine_id)
+        self.host = host
 
     def exec(self, command: str, stream: bool = False) -> tuple[int, str]:
-        wrapped = "bash -lc " + shlex.quote(command)
-        return self.client.exec_jupyter(wrapped, instance_id=self.machine_id, stream=stream)
+        # SSH is used instead of the Jupyter channel: the Jupyter `!cmd` shell
+        # escape always reports exit code 0 and tears down the process group when
+        # the kernel is deleted, which kills backgrounded downloads/restarts.
+        if not self.host:
+            raise RuntimeError("Remote host is not known; cannot run over SSH.")
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "UserKnownHostsFile=/dev/null",
+                "-o",
+                "ConnectTimeout=20",
+                "-o",
+                "LogLevel=ERROR",
+                f"root@{self.host}",
+                f"sh -lc {shlex.quote(command)}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=7200,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        if stream:
+            sys.stdout.write(output)
+            sys.stdout.flush()
+        return result.returncode, output
 
     def require(self, command: str, label: str, stream: bool = False) -> str:
         code, output = self.exec(command, stream=stream)
@@ -410,8 +443,34 @@ def _estimate(args: argparse.Namespace) -> tuple[int, int, float]:
     return width, height, cost
 
 
+def _comfy_ready(remote: Remote) -> bool:
+    code, output = remote.exec(
+        "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8188/object_info"
+    )
+    return code == 0 and "200" in output
+
+
+def _wait_comfy(remote: Remote, seconds: int) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if _comfy_ready(remote):
+            return True
+        time.sleep(5)
+    return False
+
+
 def _ensure_comfy(remote: Remote) -> None:
     remote.require("test -f /home/ComfyUI/main.py", "ComfyUI template check")
+    if not _comfy_ready(remote):
+        # The comfyui template starts ComfyUI itself, and a cold boot can take a
+        # couple of minutes (DB migrations + custom node import). Wait for it
+        # before falling back to a restart.
+        log("ComfyUI is not responding yet; waiting for the template to finish starting it...")
+        if _wait_comfy(remote, 600):
+            log("ComfyUI is ready.")
+        else:
+            log("ComfyUI still not responding; restarting it...")
+            _restart_comfy(remote)
     code, _ = remote.exec("test -d /home/ComfyUI/custom_nodes/ComfyUI-segment-anything-2")
     if code != 0:
         log("Installing ComfyUI-segment-anything-2...")
@@ -434,19 +493,23 @@ def _ensure_comfy(remote: Remote) -> None:
 
 def _restart_comfy(remote: Remote) -> None:
     log("Restarting ComfyUI to load custom nodes...")
+    # Kill and start in separate calls on purpose: if both live in one command
+    # line, the start half contains the literal "main.py --port 8188" text, so
+    # `pkill -f` matches the shell running the command and kills itself before
+    # the server is ever launched.
+    remote.exec("pkill -f 'python main[.]py --port 8188' || true; sleep 3")
     remote.exec(
-        "pkill -f '[C]omfyUI/main.py' || true; sleep 2; "
         "cd /home/ComfyUI; "
-        "nohup python main.py --port 8188 --listen 127.0.0.1 "
+        "setsid nohup python main.py --port 8188 --listen 127.0.0.1 "
         "--enable-cors-header https://cloud.jarvislabs.ai "
-        "> /home/ComfyUI/comfy_runner.log 2>&1 &"
+        "> /home/ComfyUI/comfy_runner.log 2>&1 < /dev/null &"
     )
-    deadline = time.time() + 120
+    deadline = time.time() + 600
     while time.time() < deadline:
         code, output = remote.exec(
             "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8188/object_info"
         )
-        if output.strip().endswith("200"):
+        if "200" in output:
             log("ComfyUI is ready.")
             return
         time.sleep(5)
@@ -455,7 +518,12 @@ def _restart_comfy(remote: Remote) -> None:
 
 
 def _model_size(remote: Remote, path: Path) -> int:
-    code, output = remote.exec(f"stat -c %s {shlex.quote(str(path))} 2>/dev/null || true")
+    # -L is required: the comfyui template ships many models as symlinks into a
+    # read-only Ceph mount (/home/.sd), and plain `stat` reports the link length
+    # (~37 bytes) instead of the real file size. Without -L every preinstalled
+    # model looks missing, gets re-downloaded, and wget follows the symlink into
+    # the read-only mount and fails with "Read-only file system".
+    code, output = remote.exec(f"stat -Lc %s {shlex.quote(str(path))} 2>/dev/null || true")
     try:
         return int(output.strip() or "0")
     except ValueError:
@@ -473,8 +541,8 @@ def _ensure_models(remote: Remote) -> None:
         log_name = str(REMOTE_ROOT / (path.name + ".download.log"))
         remote.exec(
             f"cd {shlex.quote(str(path.parent))}; "
-            f"nohup wget -c -q -O {shlex.quote(path.name)} {shlex.quote(url)} "
-            f"> {shlex.quote(log_name)} 2>&1 &"
+            f"setsid nohup wget -c -q -O {shlex.quote(path.name)} {shlex.quote(url)} "
+            f"> {shlex.quote(log_name)} 2>&1 < /dev/null &"
         )
         deadline = time.time() + 1800
         last = size
@@ -664,6 +732,50 @@ def _cleanup_state(machine_id: str) -> None:
         pass
 
 
+def _register_state(
+    machine_id: str,
+    host: str,
+    name: str,
+    gpu_type: str,
+    jupyter_url: str,
+    password: str,
+) -> None:
+    """Publish instance metadata so `vspagent jarvis list/status` can see the box.
+
+    This writes ~/.vspagent/jarvislabs_instances.json directly instead of
+    calling vspagent.jarvis.JarvisLabsClient.register_instance(). That call was
+    a hard dependency on an *unpinned editable checkout*; when the checkout was
+    behind, it raised `TypeError: unexpected keyword argument 'password'` after
+    the GPU had already been provisioned. Metadata sync must be best-effort.
+    """
+    path = Path.home() / ".vspagent" / "jarvislabs_instances.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+        data[str(machine_id)] = {
+            "machine_id": str(machine_id),
+            "name": name,
+            "host": host,
+            "user": "root",
+            "port": 22,
+            "gpu_type": gpu_type,
+            "status": "Running",
+            "jupyter_url": jupyter_url,
+            "password": password,
+            "registered_at": time.time(),
+            "ssh_command": f"ssh -o StrictHostKeyChecking=no root@{host}",
+        }
+        data["active_id"] = str(machine_id)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as exc:
+        log(f"WARNING: could not record instance state ({exc}); continuing.")
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--video", type=Path, required=True, help="Driving video (you moving).")
@@ -716,6 +828,8 @@ def main() -> int:
     log(f"  Output:     {args.output or ROOT / 'public' / 'videos'}")
     if args.resolution == "720p" and args.gpu == "A100":
         log("WARNING: 720p on a 40 GB A100 is tight; use --gpu A100-80GB for safety.")
+    if VSPAGENT_NOTE:
+        log(f"NOTE: {VSPAGENT_NOTE}")
 
     if args.dry_run:
         return 0
@@ -737,7 +851,6 @@ def main() -> int:
     created = False
     machine_id: str | None = None
     raw: dict | None = None
-    client: JarvisLabsClient | None = None
     session = None
     xsrf = ""
     base = ""
@@ -753,6 +866,12 @@ def main() -> int:
                 die(f"Instance {machine_id} is not running (status: {raw.get('status')}).")
             log(f"Adopting instance {machine_id} at {raw.get('public_ip')}")
         else:
+            if not args.fs_id:
+                log(
+                    "WARNING: no --fs-id attached. This run will re-download ~20 GB of model "
+                    "weights, and the next fresh instance will do it again. Create one with "
+                    "`jl filesystem create -n vsp-models -s 200` and pass --fs-id <id>."
+                )
             log(f"Creating {args.gpu} {args.template} instance...")
             instance = sdk.instances.create(
                 gpu_type=args.gpu,
@@ -772,16 +891,15 @@ def main() -> int:
         if not password or not jupyter_url:
             die("JarvisLabs did not return a Jupyter URL/password for this instance.")
 
-        client = JarvisLabsClient(token=token)
-        client.register_instance(
-            host=raw.get("public_ip", ""),
+        _register_state(
             machine_id=machine_id,
+            host=raw.get("public_ip", ""),
             name=raw.get("instance_name", "vsp-wan-animate"),
             gpu_type=raw.get("gpu_type", args.gpu),
             jupyter_url=jupyter_url,
             password=password,
         )
-        remote = Remote(client, machine_id)
+        remote = Remote(machine_id, raw.get("public_ip", ""))
 
         session, xsrf, base = _jupyter_session(jupyter_url, password)
         remote.require(f"mkdir -p {shlex.quote(str(REMOTE_ROOT))}", "remote job directory")
