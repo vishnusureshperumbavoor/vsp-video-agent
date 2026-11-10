@@ -1,7 +1,7 @@
-# 🎬 Vibe Video Studio
+# 🎬 VSP Video Agent
 
 **AI video generation on JarvisLabs A100 GPUs. FastAPI + Wan 2.1/2.2, driven by
-CLI and REST — no UI, no Colab.**
+CLI and REST.**
 
 ![Model](https://img.shields.io/badge/Model-Wan_2.1_%2F_2.2-indigo.svg)
 ![GPU](https://img.shields.io/badge/GPU-A100_SXM4-emerald.svg)
@@ -16,13 +16,12 @@ CLI and REST — no UI, no Colab.**
 - **Wan Animate (character replacement):** Drive a character image with a
   performance clip via **Wan2.2-Animate-14B** on ComfyUI.
 - **Stitching:** Concatenate clips into a film with local FFmpeg.
-- **JarvisLabs transport:** plain SSH to an on-demand A100. No Colab, no MCP
-  browser bridge, no notebook kernel.
+- **JarvisLabs transport:** plain SSH to an on-demand A100.
 - **CLI-first:** `python cli.py` for the API, `scripts/wan_animate_runner.py`
   for provisioning and detached renders.
 
-> The React dashboard was removed. This project is operated from the command
-> line and the REST API.
+> VSP Video Agent is operated from the command line and the REST API. There is
+> no web UI.
 
 ---
 
@@ -36,8 +35,9 @@ uv pip install --python .venv/bin/python -r requirements.txt
 cp .env.example .env    # add JARVIS_LABS_API_TOKEN
 ```
 
-The JarvisLabs harness is **vendored** in `server/jarvis/`. There is no
-`vspagent` dependency and no sibling checkout to keep in sync.
+The JarvisLabs harness is **vendored** in `server/jarvis/`, so the app is fully
+self-contained: no external agent package and no sibling checkout to keep in
+sync.
 
 ### 2. Start the backend
 
@@ -138,7 +138,7 @@ vsp-video-agent/
 │   ├── main.py              # FastAPI orchestrator
 │   ├── gpu.py               # JarvisLabs SSH transport (async adapter)
 │   ├── wan_worker.py        # Wan 2.1 execution payloads
-│   └── jarvis/              # Vendored JarvisLabs harness (no Colab)
+│   └── jarvis/              # Vendored JarvisLabs harness
 ├── scripts/
 │   ├── wan_animate_runner.py    # Provision → render → download → destroy
 │   ├── wan_animate_workflow.json
