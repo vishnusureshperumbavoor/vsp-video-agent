@@ -113,6 +113,47 @@ longer input.
 
 ---
 
+## MOSS-Image on JarvisLabs (A100)
+
+`scripts/moss_image_runner.py` generates **still images** with
+[`OpenMOSS-Team/MOSS-Image-SFT`](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT)
+and an optional LoRA. It is deliberately **not** part of the video pipeline:
+MOSS-Image is a text-to-image model, so nothing in `server/wan_worker.py` or the
+FastAPI app can load it. Same rail as the Wan Animate runner — provision an A100,
+run detached, fetch the PNGs, destroy in `finally`.
+
+```bash
+# Plan and cost only
+.venv/bin/python scripts/moss_image_runner.py \
+  --prompt "moss_xvstyle, a lighthouse at dusk" --count 2 --dry-run
+
+# Generate, then auto-destroy
+.venv/bin/python scripts/moss_image_runner.py \
+  --prompt "moss_xvstyle, a lighthouse at dusk" \
+  --count 4 --size 1024 --yes
+```
+
+| Flag | Meaning |
+| :--- | :--- |
+| `--count` | number of images (each gets `--seed + index`) |
+| `--size` | square side; must be a multiple of 16 |
+| `--lora-scale` / `--skip-lora` | adapter weight, or run the base model |
+| `--machine-id` | adopt a running instance instead of provisioning |
+| `--keep-instance` | leave it up for a second run |
+
+Output lands in `public/images/` (git-ignored). Defaults come from the model
+card: 50 steps, CFG 3.0, `uncond_skip_layers=[22]`, bf16 transformer and text
+encoder, fp32 VAE. The runner keeps `enable_model_cpu_offload()` on by default
+because the weights are ~27 GB and a 40 GB A100 OOMs without it.
+
+Only the 70 MB LoRA file is downloaded, never the LoRA repo's bundled
+`merged-model/` copy (~26 GB). The base model is fetched on the GPU box.
+
+The LoRA in use is adult-content (`not-for-all-audiences`): 18+ subjects only,
+and no real person's likeness without their consent.
+
+---
+
 ## REST API
 
 | Method | Endpoint | Description |
@@ -170,10 +211,13 @@ vsp-video-agent/
 │   ├── wan_animate_runner.py    # Provision → render → download → destroy
 │   ├── wan_animate_workflow.json
 │   ├── wan_animate_remote.py
+│   ├── moss_image_runner.py     # Provision → images → download → destroy
+│   ├── moss_image_remote.py
 │   ├── check_quality.py     # size ratchet, import layers, frozen vendor
 │   └── clone_detection.py   # near-duplicate (renamed copy) detector
 ├── public/
 │   ├── videos/              # Generated MP4s + metadata.json
+│   ├── images/              # Generated MOSS-Image PNGs
 │   └── uploads/             # Reference images and driving clips
 ├── tests/                   # FakeGPU + payload, lifecycle, API, contract tests
 ├── quality/budgets.json     # Size ratchet and frozen-vendor checksums

@@ -81,6 +81,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_contracts.py` | route snapshot and forbidden transport vocabulary |
 | `tests/test_clone_detection.py` | the near-duplicate detector |
 | `tests/test_quality_gate.py` | the gate itself |
+| `tests/test_moss_runner.py` | MOSS-Image command quoting, cost estimate, remote arg validation |
 
 Add the regression test in the cheapest layer that can catch it.
 
@@ -245,6 +246,36 @@ Rules:
     verify with `jl list` and destroy any remaining instance.
 11. Never expose ComfyUI or the JarvisLabs instance publicly. Use SSH only.
 12. Only use character images and driving videos you have rights to use.
+
+---
+
+## 🖼️ MOSS-Image on JarvisLabs
+
+`scripts/moss_image_runner.py` generates still images with
+`OpenMOSS-Team/MOSS-Image-SFT` plus an optional LoRA. It is a **separate model
+family** — text-to-image, not Wan — and is intentionally not wired into the
+FastAPI app or `server/wan_worker.py`.
+
+Rules:
+
+1. **Never `git clone` the LoRA repo.** `axiomofmind/Moss-image-nsfw-uncensored-lora`
+   bundles a `merged-model/` copy (~26 GB); the adapter itself is 70 MB. The
+   runner downloads only `pytorch_lora_weights.safetensors` via
+   `hf_hub_download`. Locally, use
+   `GIT_LFS_SKIP_SMUDGE=1 git clone ...` then
+   `git lfs pull --include="pytorch_lora_weights.safetensors"`.
+2. **Keep `enable_model_cpu_offload()` on.** The weights are ~27 GB; a 40 GB A100
+   OOMs at 1024² without it. `--no-offload` is for bigger cards only.
+3. **Sizes must be multiples of 16.** The remote helper rejects anything else
+   before loading the model.
+4. **Do not drop `uncond_skip_layers=[22]`** for the default sampler; it is part
+   of the model card's recipe. Passing `--negative-prompt` sets it to `[]`.
+5. **Output goes to `public/images/`**, which is git-ignored. Never commit
+   generated images.
+6. The default LoRA is adult-content (`not-for-all-audiences`): 18+ subjects
+   only, and no real person's likeness without consent.
+7. Same teardown rules as Wan Animate: `--dry-run` first, detached `spawn`,
+   destroy in `finally`, verify with `jl list` after an interruption.
 
 ---
 

@@ -14,6 +14,7 @@
     "server/gpu.py": 151,
     "server/main.py": 492,
     "server/wan_worker.py": 219,
+    "scripts/moss_image_runner.py": 319,
     "scripts/wan_animate_remote.py": 86,
     "scripts/wan_animate_runner.py": 947
   },

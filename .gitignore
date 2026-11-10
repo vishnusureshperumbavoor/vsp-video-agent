@@ -40,6 +40,8 @@ public/videos/*
 !public/videos/.gitkeep
 public/uploads/*
 !public/uploads/.gitkeep
+public/images/*
+!public/images/.gitkeep
 
 # OS & Editor
 .DS_Store
