@@ -82,6 +82,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_clone_detection.py` | the near-duplicate detector |
 | `tests/test_quality_gate.py` | the gate itself |
 | `tests/test_moss_runner.py` | MOSS-Image command quoting, cost estimate, remote arg validation |
+| `tests/test_image_preview.py` | blank-render detection, ASCII grid, phone listing |
 
 Add the regression test in the cheapest layer that can catch it.
 
@@ -276,6 +277,10 @@ Rules:
    only, and no real person's likeness without consent.
 7. Same teardown rules as Wan Animate: `--dry-run` first, detached `spawn`,
    destroy in `finally`, verify with `jl list` after an interruption.
+8. **Results are verified as text, not pixels.** The operator may be on a phone:
+   `python scripts/image_preview.py` lists dimensions and flags blank renders,
+   `--ascii` prints a proof, `--serve` exposes the folder on the LAN. That server
+   is an operator tool — never bind it to a public address or tunnel it.
 
 ---
 

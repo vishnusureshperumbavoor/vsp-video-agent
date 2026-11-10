@@ -152,6 +152,27 @@ Only the 70 MB LoRA file is downloaded, never the LoRA repo's bundled
 The LoRA in use is adult-content (`not-for-all-audiences`): 18+ subjects only,
 and no real person's likeness without their consent.
 
+### Looking at the results from a phone
+
+`public/images/` is git-ignored and the app has no web UI, so a run that finished
+on the GPU box leaves files a mobile client cannot display. Three text-first
+options:
+
+```bash
+# What was generated, and whether any image came out blank or black
+.venv/bin/python scripts/image_preview.py
+
+# Rough ASCII proof, visible in the agent's log
+.venv/bin/python scripts/image_preview.py --ascii --width 44
+
+# Browse the real files from a phone on the same Wi-Fi
+.venv/bin/python scripts/image_preview.py --serve --port 8080
+```
+
+`--serve` is a static file server for the operator, not part of the app. It binds
+to `0.0.0.0` so your phone can reach it on the LAN, and it prints the exact URL.
+Never port-forward it or put it behind a public tunnel.
+
 ---
 
 ## REST API
@@ -213,6 +234,7 @@ vsp-video-agent/
 │   ├── wan_animate_remote.py
 │   ├── moss_image_runner.py     # Provision → images → download → destroy
 │   ├── moss_image_remote.py
+│   ├── image_preview.py     # text listing, ASCII proof, LAN viewer for a phone
 │   ├── check_quality.py     # size ratchet, import layers, frozen vendor
 │   └── clone_detection.py   # near-duplicate (renamed copy) detector
 ├── public/

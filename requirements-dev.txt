@@ -1,3 +1,4 @@
 # Development and CI only. Runtime deps live in requirements.txt.
 pytest>=8.0
 ruff>=0.6
+pillow>=10.0   # scripts/image_preview.py (text/ASCII/LAN views of generated images)
