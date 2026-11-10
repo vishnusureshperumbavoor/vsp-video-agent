@@ -16,7 +16,6 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -25,7 +24,7 @@ BUDGETS_FILE = ROOT / "quality" / "budgets.json"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from clone_detection import scan  # noqa: E402
+from clone_detection import hand_written_files, scan  # noqa: E402
 
 # path prefix -> (forbidden module prefixes, why)
 # A rule applies to every tracked .py file under the prefix.
@@ -114,20 +113,6 @@ class Report:
         else:
             print("✔ Quality gate clean.")
         return 0
-
-
-def tracked_python_files() -> list[Path]:
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "*.py"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-        return [ROOT / line for line in out.splitlines() if line]
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return sorted(ROOT.rglob("*.py"))
 
 
 def rel(path: Path, root: Path = ROOT) -> str:
@@ -292,7 +277,7 @@ def check_duplication(files: list[Path], budgets: dict, report: Report) -> None:
 
 def main() -> int:
     budgets = load_budgets()
-    files = tracked_python_files()
+    files = hand_written_files(ROOT)
     report = Report()
 
     check_file_sizes(files, budgets, report)
