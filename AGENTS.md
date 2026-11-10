@@ -83,6 +83,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_quality_gate.py` | the gate itself |
 | `tests/test_moss_runner.py` | MOSS-Image command quoting, cost estimate, remote arg validation |
 | `tests/test_image_preview.py` | blank-render detection, ASCII grid, phone listing |
+| `tests/test_range_serve.py` | byte ranges (`206`), so mobile video plays and seeks |
 
 Add the regression test in the cheapest layer that can catch it.
 

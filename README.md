@@ -173,6 +173,18 @@ options:
 to `0.0.0.0` so your phone can reach it on the LAN, and it prints the exact URL.
 Never port-forward it or put it behind a public tunnel.
 
+Point it at `public/` (not `public/images/`) to reach video too:
+
+```bash
+.venv/bin/python scripts/image_preview.py --serve --dir public
+# http://<lan-ip>:8080/images/...   http://<lan-ip>:8080/videos/...
+```
+
+Video is served with **byte ranges** (`206 Partial Content`, via
+`scripts/range_serve.py`), which is not optional: iOS Safari refuses to play a
+video without it, and no browser can seek. `ffmpeg -movflags +faststart` is the
+other half — the index has to come before the frames.
+
 ---
 
 ## REST API
@@ -235,6 +247,7 @@ vsp-video-agent/
 │   ├── moss_image_runner.py     # Provision → images → download → destroy
 │   ├── moss_image_remote.py
 │   ├── image_preview.py     # text listing, ASCII proof, LAN viewer for a phone
+│   ├── range_serve.py       # byte-range handler so mobile video can seek
 │   ├── check_quality.py     # size ratchet, import layers, frozen vendor
 │   └── clone_detection.py   # near-duplicate (renamed copy) detector
 ├── public/

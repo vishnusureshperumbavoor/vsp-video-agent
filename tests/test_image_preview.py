@@ -111,3 +111,17 @@ def test_main_explains_an_empty_folder(tmp_path, monkeypatch, capsys) -> None:
 
     assert code == 1
     assert "no images" in out
+
+
+def test_has_content_accepts_a_folder_of_subfolders(tmp_path) -> None:
+    (tmp_path / "videos").mkdir()
+    (tmp_path / "videos" / "clip.mp4").write_bytes(b"x")
+
+    assert preview.has_content(tmp_path) is True
+
+
+def test_has_content_rejects_an_empty_folder(tmp_path) -> None:
+    (tmp_path / "empty").mkdir()
+
+    assert preview.has_content(tmp_path / "empty") is False
+    assert preview.has_content(tmp_path / "missing") is False

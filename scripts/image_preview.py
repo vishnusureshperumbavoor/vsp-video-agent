@@ -21,8 +21,10 @@ import json
 import socket
 import sys
 from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+
+from range_serve import RangeRequestHandler
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DIR = ROOT / "public" / "images"
@@ -90,7 +92,7 @@ def lan_ip() -> str:
 
 
 def serve(directory: Path, port: int) -> None:
-    handler = partial(SimpleHTTPRequestHandler, directory=str(directory))
+    handler = partial(RangeRequestHandler, directory=str(directory))
     address = lan_ip()
     print(f"serving {directory}", flush=True)
     print(f"  phone (same Wi-Fi):  http://{address}:{port}/", flush=True)
@@ -114,14 +116,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def has_content(directory: Path) -> bool:
+    """True when a folder has anything in it, including only subfolders.
+
+    `--serve` is often pointed at `public/`, which holds `images/` and `videos/`
+    but no files of its own, so counting images there would wrongly refuse.
+    """
+    return directory.is_dir() and any(directory.iterdir())
+
+
 def main() -> int:
     args = parse_args()
     directory = Path(args.dir).expanduser().resolve()
     images = list_images(directory)
 
     if args.serve:
-        if not images:
-            print(f"nothing to serve: {directory} has no images yet")
+        if not has_content(directory):
+            print(f"nothing to serve: {directory} is empty")
             return 1
         serve(directory, args.port)
         return 0
