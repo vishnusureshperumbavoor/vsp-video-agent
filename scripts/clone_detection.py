@@ -260,8 +260,11 @@ def _count_duplicate_lines(regions: list[Region]) -> int:
 
 def hand_written_files(root: Path = ROOT) -> list[Path]:
     try:
+        # --cached --others: include files that are staged but not yet committed.
+        # Without --others the gate skips a brand-new file locally and only fails
+        # in CI, which is exactly how this bit its own author.
         out = subprocess.run(
-            ["git", "ls-files", "*.py"],
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],
             cwd=root,
             capture_output=True,
             text=True,
