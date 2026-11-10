@@ -14,7 +14,7 @@ Read **How This Codebase Stays Small** before adding any code.
 
 This repository is maintained mostly by coding agents. Agents append to whatever
 file the task names, so the layout is enforced mechanically rather than by good
-intentions. Three gates run in CI on every push.
+intentions. Three commands run in CI on every push.
 
 ### Definition of done
 
@@ -51,9 +51,19 @@ split it when you next touch it.
 | New file | 500 lines (warn at 300) |
 | Function | 120 lines (warn at 80) |
 | `server/jarvis/` | frozen, verified by sha256 |
+| Near-duplicate code | 41 duplicated lines total, ratchet to 0 |
 
 The budget file is a **ratchet**: limits may go down, never up. Raising one is a
 deliberate edit that appears in review as a change to that file.
+
+### Duplication
+
+`scripts/clone_detection.py` normalizes the token stream (identifiers → `N`,
+numbers → `0`, strings → `S`) and hashes every 50-token window. A copied
+function with renamed variables still matches. The 41 lines currently flagged
+are the shared scaffolding of `generate_t2v_script()` and
+`generate_i2v_script()`; remove them when you split that file. Do not raise the
+cap.
 
 ### Frozen vendored code
 
@@ -69,6 +79,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_job_lifecycle.py` | queue → stage → spawn → poll → download, on `FakeGPU` |
 | `tests/test_api.py` | status codes and the A100 guardrail |
 | `tests/test_contracts.py` | route snapshot and forbidden transport vocabulary |
+| `tests/test_clone_detection.py` | the near-duplicate detector |
 | `tests/test_quality_gate.py` | the gate itself |
 
 Add the regression test in the cheapest layer that can catch it.

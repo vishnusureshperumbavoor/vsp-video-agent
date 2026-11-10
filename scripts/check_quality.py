@@ -23,6 +23,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BUDGETS_FILE = ROOT / "quality" / "budgets.json"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from clone_detection import scan  # noqa: E402
+
 # path prefix -> (forbidden module prefixes, why)
 # A rule applies to every tracked .py file under the prefix.
 IMPORT_RULES: list[tuple[str, list[str], str]] = [
@@ -265,6 +269,27 @@ def check_import_layers(
                         )
 
 
+def check_duplication(files: list[Path], budgets: dict, report: Report) -> None:
+    """Near-duplicate detection: renamed copies still match."""
+    settings = budgets.get("duplication", {})
+    result = scan(
+        files,
+        window=settings.get("window", 50),
+        min_tokens=settings.get("min_tokens", 80),
+        min_lines=settings.get("min_lines", 8),
+    )
+    cap = settings.get("max_duplicate_lines", 0)
+
+    for region in result.clusters()[:5]:
+        report.warn(f"duplicate: {region.render()}")
+
+    if result.duplicate_lines > cap:
+        report.fail(
+            f"{result.duplicate_lines} duplicated lines (cap {cap}) — "
+            f"extract the shared code into one function or module"
+        )
+
+
 def main() -> int:
     budgets = load_budgets()
     files = tracked_python_files()
@@ -274,6 +299,7 @@ def main() -> int:
     check_function_sizes(files, budgets, report)
     check_vendored_checksums(budgets, report)
     check_import_layers(files, report)
+    check_duplication(files, budgets, report)
 
     return report.render()
 

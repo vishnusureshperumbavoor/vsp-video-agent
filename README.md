@@ -145,6 +145,8 @@ two seconds and need no GPU:
 - **Size ratchet:** `quality/budgets.json` caps every file and function at its
   current size. Limits may go down, never up.
 - **Frozen vendor:** `server/jarvis/` is checksummed. Re-vendor it, don't edit it.
+- **Duplication:** `scripts/clone_detection.py` flags renamed copies (normalized
+  token windows), so "copy, rename, tweak a constant" is caught.
 - **Architecture:** `scripts/check_quality.py` enforces the import layers, so a
   router cannot reach into the transport and the domain stays pure Python.
 - **Free tests:** `tests/fakes.py` provides `FakeGPU`, so the whole job lifecycle
@@ -167,7 +169,9 @@ vsp-video-agent/
 ├── scripts/
 │   ├── wan_animate_runner.py    # Provision → render → download → destroy
 │   ├── wan_animate_workflow.json
-│   └── wan_animate_remote.py
+│   ├── wan_animate_remote.py
+│   ├── check_quality.py     # size ratchet, import layers, frozen vendor
+│   └── clone_detection.py   # near-duplicate (renamed copy) detector
 ├── public/
 │   ├── videos/              # Generated MP4s + metadata.json
 │   └── uploads/             # Reference images and driving clips

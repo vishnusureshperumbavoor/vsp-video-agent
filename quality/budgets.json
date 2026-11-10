@@ -26,5 +26,18 @@
     "server/jarvis/__init__.py": "14a0c770fd705f83797ca82ab525650bd998de2b98bc4468b4d461559f9b1678",
     "server/jarvis/client.py": "f347e8b1ca1f690e35366410a44e8146866e4513bd0d45189a67b9950874b70c",
     "server/jarvis/tunnel.py": "f1812d5ef538ffd610fa31d93d034b13f3a3574a4b56ce6664f18e6ff0f37727"
+  },
+  "duplication": {
+    "$comment": [
+      "Near-duplicate detector (scripts/clone_detection.py).",
+      "max_duplicate_lines is a ratchet too: it may only go down.",
+      "The current 41 lines are the shared scaffolding between",
+      "generate_t2v_script() and generate_i2v_script(); remove them when that",
+      "file is split."
+    ],
+    "window": 50,
+    "min_tokens": 80,
+    "min_lines": 8,
+    "max_duplicate_lines": 41
   }
 }
