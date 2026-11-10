@@ -1,37 +1,46 @@
 """
-Wan 2.1 Video Generation Payloads for Colab A100.
-Optimized Diffusers pipeline for NVIDIA A100 SXM4 40GB with detached asynchronous execution.
+Wan 2.1 video generation payloads for a JarvisLabs A100.
+
+Emits standalone Python scripts that are staged on the GPU box and run detached
+via `setsid`. The scripts are transport-agnostic: they only need a working
+diffusers install and a writable output directory.
 """
 
+# Remote working directory for staged jobs, logs and outputs.
+REMOTE_JOB_DIR = "/home/vsp_jobs"
+
+
 def generate_cache_cleanup_code() -> str:
-    """Removes dangling blobs and unused large checkpoints to maintain healthy Colab disk space."""
+    """Remove dangling blobs and unused checkpoints to keep disk usage healthy."""
     return """
 import os, shutil, subprocess
 
 hf_hub = "/root/.cache/huggingface/hub"
-print("=== Colab Disk Preflight Check ===")
-subprocess.run(["df", "-h", "/content"], check=False)
+print("=== GPU Disk Preflight Check ===")
+subprocess.run(["df", "-h", "/home"], check=False)
 
 if os.path.exists(hf_hub):
-    # Free old T2V cache if both T2V and I2V exist to stay under 80% disk threshold
+    # Free the older T2V cache when both T2V and I2V checkpoints exist.
     t2v_14b = os.path.join(hf_hub, "models--Wan-AI--Wan2.1-T2V-14B-Diffusers")
     if os.path.exists(t2v_14b):
-        print("Clearing older T2V 14B checkpoint to keep Colab disk healthy...")
+        print("Clearing older T2V 14B checkpoint to keep disk healthy...")
         shutil.rmtree(t2v_14b, ignore_errors=True)
 
-print("=== Colab Disk After Cleanup ===")
-subprocess.run(["df", "-h", "/content"], check=False)
+print("=== GPU Disk After Cleanup ===")
+subprocess.run(["df", "-h", "/home"], check=False)
 """
 
-def generate_colab_setup_code() -> str:
-    return """
-import sys, subprocess, os
 
-print("=== Checking Colab GPU Environment ===")
+def generate_gpu_setup_code() -> str:
+    """Install/refresh the Wan 2.1 runtime on the GPU box."""
+    return """
+import sys, subprocess
+
+print("=== Checking GPU Environment ===")
 subprocess.run(["nvidia-smi"], check=True)
 
-# Remove incompatible torchao if present
-subprocess.run(["pip", "uninstall", "-y", "torchao"], check=False)
+# Remove incompatible torchao if present (FqnToConfig import errors).
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "torchao"], check=False)
 
 packages = [
     "git+https://github.com/huggingface/diffusers.git",
@@ -40,13 +49,14 @@ packages = [
     "sentencepiece",
     "imageio[ffmpeg]",
     "torchvision",
-    "ftfy"
+    "ftfy",
 ]
 
 print("Installing / updating required packages for Wan 2.1 video generation...")
 subprocess.run([sys.executable, "-m", "pip", "install", "-q"] + packages, check=True)
-print("=== Colab Environment Ready for Video Generation ===")
+print("=== GPU Environment Ready for Video Generation ===")
 """
+
 
 def generate_t2v_script(
     prompt: str,
@@ -58,9 +68,10 @@ def generate_t2v_script(
     guidance_scale: float = 6.0,
     seed: int = 42,
     model_id: str = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-    output_filename: str = "generated_t2v.mp4"
+    output_filename: str = "generated_t2v.mp4",
+    output_dir: str = REMOTE_JOB_DIR,
 ) -> str:
-    # Ensure num_frames is 4k + 1
+    # Wan requires num_frames to follow 4k + 1.
     if (num_frames - 1) % 4 != 0:
         num_frames = ((num_frames - 1) // 4) * 4 + 1
         if num_frames < 17:
@@ -69,6 +80,7 @@ def generate_t2v_script(
     prompt_escaped = prompt.replace('"', '\\"').replace('\n', ' ')
     neg_escaped = negative_prompt.replace('"', '\\"').replace('\n', ' ')
     use_offload = "14B" in model_id
+    output_path = f"{output_dir.rstrip('/')}/{output_filename}"
 
     return f"""import sys, os, gc, time
 import torch
@@ -112,13 +124,14 @@ output = pipe(
 )
 
 video_frames = output.frames[0]
-output_path = "/content/{output_filename}"
+output_path = "{output_path}"
 export_to_video(video_frames, output_path, fps=16)
 
 file_size = os.path.getsize(output_path)
 elapsed = time.time() - t0
 print(f"=== JOB_SUCCESS: {{output_path}} generated in {{elapsed:.1f}}s ({{file_size}} bytes) ===", flush=True)
 """
+
 
 def generate_i2v_script(
     remote_image_path: str,
@@ -131,7 +144,8 @@ def generate_i2v_script(
     guidance_scale: float = 5.0,
     seed: int = 42,
     model_id: str = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
-    output_filename: str = "generated_i2v.mp4"
+    output_filename: str = "generated_i2v.mp4",
+    output_dir: str = REMOTE_JOB_DIR,
 ) -> str:
     if (num_frames - 1) % 4 != 0:
         num_frames = ((num_frames - 1) // 4) * 4 + 1
@@ -140,6 +154,7 @@ def generate_i2v_script(
 
     prompt_escaped = prompt.replace('"', '\\"').replace('\n', ' ')
     neg_escaped = negative_prompt.replace('"', '\\"').replace('\n', ' ')
+    output_path = f"{output_dir.rstrip('/')}/{output_filename}"
 
     return f"""import sys, os, gc, time
 from PIL import Image
@@ -195,7 +210,7 @@ output = pipe(
 )
 
 video_frames = output.frames[0]
-output_path = "/content/{output_filename}"
+output_path = "{output_path}"
 export_to_video(video_frames, output_path, fps=16)
 
 file_size = os.path.getsize(output_path)

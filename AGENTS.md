@@ -1,138 +1,138 @@
 # 🤖 AGENTS.md — Vibe Video Studio Instruction Manual
 
-This document provides autonomous coding agents (Antigravity, Cursor, Claude Code, terminal bots) with instructions to generate and assemble AI videos using Vibe Video Studio.
+Instructions for autonomous coding agents (Antigravity, Cursor, Claude Code,
+terminal bots) working on this repo.
+
+**This project is JarvisLabs-only and CLI-first.** There is no Google Colab, no
+MCP browser bridge, no notebook kernel and no web UI. Every GPU operation is an
+SSH command against an on-demand JarvisLabs instance.
 
 ---
 
 ## ⛔ STRICT HARDWARE MANDATE: NVIDIA A100 GPU ONLY
 
-**Antigravity and all autonomous agents MUST strictly obey the following hardware policy:**
-1. **Never generate video without an NVIDIA A100**: Local CPU or Colab CPU/T4/V100 must NEVER be used for video generation. Video diffusion requires the memory bandwidth and bfloat16 tensor cores of the A100.
-2. **Pre-flight Enforcement**: Both `/api/video/generate/t2v` and `/api/video/generate/i2v`, as well as `cli.py generate`, run hardware verification queries (`nvidia-smi`) before staging any job.
-3. **Automatic Rejection**: If Colab is disconnected or running on anything other than an NVIDIA A100, execution **MUST IMMEDIATELY TERMINATE** and output:
-   `"❌ STOPPING EXECUTION: NVIDIA A100 GPU is strictly required for video generation. Please switch to an A100 GPU in Colab (Runtime -> Change runtime type -> A100)."`
+1. **Never generate video without an NVIDIA A100.** Local CPU or any other GPU
+   must NEVER be used. Video diffusion needs the memory bandwidth and bfloat16
+   tensor cores of the A100.
+2. **Pre-flight enforcement.** `/api/video/generate/t2v`, `/api/video/generate/i2v`
+   and `python cli.py generate` all call `verify_a100()` before staging a job.
+3. **Automatic rejection.** If no instance is running, or the attached GPU is not
+   an A100, execution MUST terminate with:
+   `"❌ STOPPING EXECUTION: NVIDIA A100 GPU is strictly required for video generation."`
 
 ---
 
-## 🎯 System Architecture Overview
+## 🎯 System Architecture
 
-* **Compute Worker:** Remote Google Colab instance running an **NVIDIA A100-SXM4 GPU (40 GB VRAM)**.
-* **Bridge Harness:** `vspagent` Python SDK managing `colab-mcp` browser pairing and code execution.
-* **Local Backend:** FastAPI server running on `http://localhost:8000`.
-* **Local Frontend:** React Vite dashboard on `http://localhost:5174`.
-* **Video Generation Engine:** **Wan 2.1** (`1.3B` for drafts, `14B` for final cinematic output, and `I2V-14B` for image animation).
-
----
-
-## ⚡ Asynchronous Detached Execution Pattern (Fire & Poll)
-
-When dispatching heavy diffusion jobs to Google Colab via `colab-mcp`, **never hold a synchronous blocking cell execution open for multi-minute generation**. Doing so triggers MCP timeouts and can deadlock if the browser DOM sleeps.
-
-**The Production Pattern implemented in `server/main.py`:**
-1. **Script Staging:** The backend generates a standalone script and writes it to `/content/<job_id>.py`.
-2. **Safe Detached Spawn:** Colab executes `subprocess.Popen(['python3', '-u', '/content/<job_id>.py'], stdout=open('/content/<job_id>.log', 'w'))`. The cell returns in `< 0.5s`.
-3. **Decoupled Polling:** The FastAPI background task polls `/content/<job_id>.log` every 5 seconds to stream progress into the UI job drawer.
-4. **Chunked Staging & Download:** Large assets (images and videos) are streamed using chunked base64 slices to prevent pipe saturation.
+* **Compute worker:** JarvisLabs GPU instance (A100 40 GB) running ComfyUI or the
+  Wan diffusers pipeline.
+* **Transport:** SSH only, via the vendored harness in `server/jarvis/`
+  (`JarvisLabsClient`). No `vspagent` dependency, no sibling checkout.
+* **Backend:** FastAPI on `http://localhost:8000` (`server/main.py`).
+* **GPU adapter:** `server/gpu.py` — async wrapper used by the API jobs.
+* **Engines:** Wan 2.1 (`1.3B` draft, `14B` cinematic, `I2V-14B`), and
+  Wan2.2-Animate-14B for character replacement.
+* **CLI:** `cli.py` (API client + direct `gpu` commands) and
+  `scripts/wan_animate_runner.py` (provision → render → download → destroy).
 
 ---
 
-## 🖥️ Colab Browser State Rules
+## ⚡ Asynchronous Detached Execution (Fire & Poll)
 
-Because `colab-mcp` bridges via Chrome extension to the Google Colab web tab:
-1. **Active Tab Requirement:** The Google Colab tab in Chrome should stay in an open, un-minimized browser window so Chrome doesn't throttle background JavaScript execution.
-2. **Dismiss System Modals:** Colab displays modal alerts (e.g. *"Disk is almost full"* or *"Runtime warning"*). When any modal backdrop is active in Colab, the web UI intercepts all clicks, which blocks extension automation. Dismissing modals immediately restores automation.
-3. **Cache Maintenance:** Run `python cli.py clean-cache` or `POST /api/video/clean-cache` periodically to keep Colab disk usage under 55% and prevent disk alert modals entirely.
+Never hold a blocking SSH call open for a multi-minute render.
 
----
+1. **Stage:** write the generated script to `/home/vsp_jobs/<job_id>.py`.
+2. **Spawn detached:** `cd /home/vsp_jobs; setsid nohup python3 -u <job_id>.py > <job_id>.log 2>&1 < /dev/null &`
+   — the call returns immediately.
+3. **Poll:** the FastAPI background task tails `<job_id>.log` every 5 s.
+4. **Download:** fetch the finished MP4 over SCP.
 
-## 🛠️ Agent Command Line Interface (`cli.py`)
-
-Agents should use `python cli.py <command>` for zero-overhead video generation:
-
-### 1. Check GPU & System Health
-```bash
-python cli.py status
-```
-*Expected Output:* Confirms backend is `online` and Colab connection is `connected`.
-
-### 2. Clean Colab Checkpoint Cache
-```bash
-python cli.py clean-cache
-```
-Frees ~30-50 GB of disk on Colab to maintain healthy disk thresholds.
-
-### 3. Generate a Video from Text (T2V)
-```bash
-# Fast Draft Preview (1.3B model, ~30-60s)
-python cli.py generate "A dramatic drone flyover of a futuristic neon city in rain" --model 1.3B --duration 3
-
-# High-Fidelity Cinematic Master (14B model, ~2-4m)
-python cli.py generate "Close-up cinematic shot of an astronaut looking at Earth, golden visor reflection, 8k" --model 14B --duration 5 --ratio 16:9
-```
-*Options:*
-* `--model`: `1.3B` (fast draft) or `14B` (flagship cinematic)
-* `--ratio`: `16:9` (landscape), `9:16` (reels/shorts), or `1:1` (square)
-* `--duration`: `3`, `5`, or `10` seconds
-* `--steps`: Inference steps (default: 25)
-* `--no-wait`: Submits to queue and returns immediately without blocking
-
-### 4. List Local Videos
-```bash
-python cli.py list
-```
-Returns filenames, prompts, file sizes, and download URLs.
-
-### 5. Stitch Multiple Clips into a Movie
-```bash
-python cli.py stitch scene1.mp4 scene2.mp4 scene3.mp4 --output final_short_film.mp4
-```
-Uses local FFmpeg for lossless concatenation.
+`server/gpu.py` implements this as `write_file` → `spawn` → `read_log` →
+`download_file_from_colab`.
 
 ---
 
-## 🌐 Direct REST API Endpoints
+## 🛠️ Command Line Interface
 
-Agents with HTTP access can query `http://localhost:8000` directly:
+### Check the GPU
+
+```bash
+python cli.py status          # backend + attached instance + A100 readiness
+python cli.py gpu doctor      # pre-flight without the backend
+python cli.py gpu instances   # list JarvisLabs instances
+```
+
+### Generate
+
+```bash
+python cli.py generate "A drone flyover of a neon city in rain" --model 1.3B --duration 3
+python cli.py generate "Astronaut watching Earth, golden visor, 8k" --model 14B --duration 5 --ratio 16:9
+```
+
+Options: `--model 1.3B|14B`, `--ratio 16:9|9:16|1:1`, `--duration 3|5|10`,
+`--steps`, `--no-wait`.
+
+### Inspect, clean, stitch
+
+```bash
+python cli.py jobs            # queued/running/completed jobs and last log line
+python cli.py list            # local gallery
+python cli.py clean-cache     # drop unused checkpoints on the GPU box
+python cli.py stitch a.mp4 b.mp4 -o final.mp4
+```
+
+### Pre-flight helpers (no backend required)
+
+```bash
+python cli.py gpu audit /home/ComfyUI/models/vae/wan_2.1_vae.safetensors \
+  --min-size /home/ComfyUI/models/vae/wan_2.1_vae.safetensors=200000000
+python cli.py gpu wait 8188 --http --path /object_info
+```
+
+---
+
+## 🌐 REST API
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/health` | Returns backend health and local video counts |
-| `GET` | `/colab/status` | Returns live Colab connection status and GPU info |
-| `POST` | `/api/video/clean-cache` | Clears unused Colab checkpoints to free disk |
-| `POST` | `/api/video/generate/t2v` | Dispatches text-to-video payload to Colab A100 |
-| `POST` | `/api/video/generate/i2v` | Dispatches image-to-video payload (multipart/form-data) |
-| `GET` | `/api/video/jobs/{job_id}` | Polls job logs and status (`running`, `completed`, `failed`) |
-| `GET` | `/api/video/gallery` | Returns metadata list of all locally saved MP4s |
-| `POST` | `/api/video/stitch` | Concatenates list of video filenames with FFmpeg |
+| `GET` | `/api/health` | Backend health, GPU connection, A100 readiness |
+| `GET` | `/api/gpu/status` | Live instance probe |
+| `POST` | `/api/gpu/setup` | Install the Wan 2.1 runtime on the GPU box |
+| `POST` | `/api/video/clean-cache` | Drop unused checkpoints |
+| `POST` | `/api/video/generate/t2v` | Queue text-to-video |
+| `POST` | `/api/video/generate/i2v` | Queue image-to-video (multipart) |
+| `GET` | `/api/video/jobs` | List jobs |
+| `GET` | `/api/video/jobs/{job_id}` | Poll logs and status |
+| `GET` | `/api/video/gallery` | Local video metadata |
+| `POST` | `/api/video/stitch` | Concatenate clips with FFmpeg |
 
 ---
 
 ## 🎭 Wan Animate on JarvisLabs
 
-Use `scripts/wan_animate_runner.py` for character replacement/animation, not
-ad-hoc shell commands.
+Use `scripts/wan_animate_runner.py`, never ad-hoc shell commands.
 
 ```bash
 # Always inspect the plan/cost first
 .venv/bin/python scripts/wan_animate_runner.py \
   --video public/uploads/wan_animate/driving.mp4 \
-  --image public/uploads/wan_animate/character.jpg \
+  --image public/uploads/wan_animate/character.png \
   --gpu A100 --resolution draft --frames 154 --dry-run
 
 # Then run with auto-destroy
 .venv/bin/python scripts/wan_animate_runner.py \
   --video public/uploads/wan_animate/driving.mp4 \
-  --image public/uploads/wan_animate/character.jpg \
+  --image public/uploads/wan_animate/character.png \
   --gpu A100 --resolution draft --frames 154 --yes
 ```
 
 Rules:
 
-1. **Run the pre-flight before provisioning.** `vspagent jarvis doctor --strict`
-   must pass, and the model audit must be clean:
+1. **Run the pre-flight before provisioning.** `python cli.py gpu doctor` must
+   pass, and the model audit must be clean:
 
    ```bash
-   vspagent jarvis audit \
+   python cli.py gpu audit \
      /home/ComfyUI/models/diffusion_models/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors \
      --min-size /home/ComfyUI/models/diffusion_models/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors=18000000000
    ```
@@ -144,28 +144,37 @@ Rules:
 2. **Never kill and start ComfyUI in one shell line.** `pkill -f` matches the
    shell running the compound command and kills itself before the server
    launches. Kill by port in one call, spawn with `setsid` in a second call,
-   then `vspagent jarvis wait 8188 --http --path /object_info`.
-3. **Background jobs must use `setsid`** (`setsid nohup cmd > log 2>&1 < /dev/null &`)
-   and must be polled from the log file. Never hold a blocking remote cell open
-   for a multi-minute render.
-4. **Always cap frames** to the workflow budget (154) before uploading. Never
+   then `python cli.py gpu wait 8188 --http --path /object_info`.
+3. **Background jobs must use `setsid`** and be polled from the log file.
+   `spawn()` emits `cd dir; cmd &` — **not** `cd dir && cmd &`, which makes bash
+   background the whole AND-list and block until the job finishes.
+4. **SSH must not forward stdin** (`ssh -n`). A forwarded stdin keeps the
+   channel open, so a successfully spawned daemon looks like a hang.
+5. **Always cap frames** to the workflow budget (154) before uploading. Never
    preprocess the whole source clip when only the first segments are used.
-5. **Draft at `--resolution draft`** (640×368). Use `720p` only for a final.
-6. Prefer **`--gpu A100` (40 GB)** or a spot GPU; `A100-80GB` is only for 720p.
-7. Use `--fs-id` with a persistent JarvisLabs filesystem to cache the ~20 GB of
+6. **Draft at `--resolution draft`** (640×368). Use `720p` only for a final.
+7. Prefer **`--gpu A100` (40 GB)** or a spot GPU; `A100-80GB` is only for 720p.
+8. Use `--fs-id` with a persistent JarvisLabs filesystem to cache the ~20 GB of
    models across runs. The runner warns when it provisions without one.
-8. Use `--dry-run` to show the estimated INR cost before provisioning.
-9. The runner destroys created instances in `finally`. If it is interrupted,
-   verify with `jl list` and destroy any remaining instance.
-10. Never expose ComfyUI or the JarvisLabs instance publicly. Use Jupyter/SSH
-   only.
-11. Only use character images and driving videos you have rights to use.
+9. Use `--dry-run` to show the estimated INR cost before provisioning.
+10. The runner destroys created instances in `finally`. If it is interrupted,
+    verify with `jl list` and destroy any remaining instance.
+11. Never expose ComfyUI or the JarvisLabs instance publicly. Use SSH only.
+12. Only use character images and driving videos you have rights to use.
 
 ---
 
-## ⚠️ Important Engineering Rules for Agents
+## ⚠️ Engineering Rules
 
-1. **Temporal Dimension Rule:** Wan 2.1 requires `num_frames` to strictly follow **`4k + 1`** (e.g., `17`, `33`, `49`, `81`). `cli.py` and `server/wan_worker.py` enforce this automatically.
-2. **`torchao` Incompatibility:** Do not install older versions of `torchao` on Colab. `server/wan_worker.py` automatically purges outdated `torchao` modules to prevent `FqnToConfig` import errors.
-3. **`ftfy` Patch in Wan I2V:** Wan I2V calls `ftfy.fix_text()` in prompt normalization. Always include `diffusers.pipelines.wan.pipeline_wan_i2v.ftfy = ftfy`.
-4. **Memory Management for 14B:** Always use `pipe.enable_model_cpu_offload()` for 14B models on the 40GB A100 to guarantee zero OOM risk.
+1. **Temporal dimension rule:** Wan requires `num_frames` to follow **`4k + 1`**
+   (`17`, `33`, `49`, `81`). `server/wan_worker.py` enforces this automatically.
+2. **`torchao` incompatibility:** do not install older `torchao` versions. The
+   generated scripts purge stale `torchao` modules to avoid `FqnToConfig` errors.
+3. **`ftfy` patch in Wan I2V:** Wan I2V calls `ftfy.fix_text()`. The generated
+   I2V script sets `diffusers.pipelines.wan.pipeline_wan_i2v.ftfy = ftfy`.
+4. **Memory management for 14B:** always use `pipe.enable_model_cpu_offload()`
+   for 14B models on the 40 GB A100 to guarantee zero OOM risk.
+5. **No Colab code.** Do not reintroduce `colab-mcp`, notebook kernels or
+   browser-automation paths. The transport is SSH only.
+6. **`server/jarvis/` is vendored.** If you change it, update the upstream
+   `vspagent` project too, and keep `CLIENT_API_VERSION` in sync.

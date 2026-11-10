@@ -1,0 +1,8 @@
+# Backend (FastAPI) + JarvisLabs transport.
+# There is no Google Colab, MCP or browser bridge dependency.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+pydantic>=2.6
+jarvislabs>=0.2.19
+requests>=2.28.0

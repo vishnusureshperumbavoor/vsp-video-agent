@@ -53,27 +53,16 @@ ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW_FILE = ROOT / "scripts" / "wan_animate_workflow.json"
 REMOTE_HELPER = ROOT / "scripts" / "wan_animate_remote.py"
 
-# vspagent is optional. The runner only needs it to publish instance metadata
-# into ~/.vspagent/jarvislabs_instances.json so `vspagent jarvis list` can see
-# the box; that write is done directly in _register_state() below. A stale
-# editable vspagent checkout once raised
+# Instance metadata is written directly to ~/.vspagent/jarvislabs_instances.json
+# by _register_state(). There is deliberately no vspagent import: a stale
+# editable checkout once raised
 #   TypeError: JarvisLabsClient.register_instance() got an unexpected keyword
 #   argument 'password'
 # *after* a GPU was already billing, killing the run. Bookkeeping must never be
-# able to abort a paid job, so this import is best-effort and version-checked.
-VSPAGENT_MIN_API = 3
-VSPAGENT_NOTE = ""
-try:
-    from vspagent.jarvis.client import CLIENT_API_VERSION as _VSPAGENT_API
-
-    if _VSPAGENT_API < VSPAGENT_MIN_API:
-        VSPAGENT_NOTE = (
-            f"vspagent client API v{_VSPAGENT_API} is older than the required "
-            f"v{VSPAGENT_MIN_API}; run `git pull` in ../vspagent (metadata sync skipped)"
-        )
-except Exception as exc:  # pragma: no cover - optional dependency
-    VSPAGENT_NOTE = f"vspagent unavailable ({exc}); metadata sync skipped"
-
+# able to abort a paid job.
+#
+# The JSON path is still shared with the `vspagent` CLI, so `vspagent jarvis
+# list` keeps working if that tool happens to be installed.
 
 REGION_URLS = {
     "india-noida-01": "https://backendn.jarvislabs.net",
@@ -828,8 +817,6 @@ def main() -> int:
     log(f"  Output:     {args.output or ROOT / 'public' / 'videos'}")
     if args.resolution == "720p" and args.gpu == "A100":
         log("WARNING: 720p on a 40 GB A100 is tight; use --gpu A100-80GB for safety.")
-    if VSPAGENT_NOTE:
-        log(f"NOTE: {VSPAGENT_NOTE}")
 
     if args.dry_run:
         return 0
