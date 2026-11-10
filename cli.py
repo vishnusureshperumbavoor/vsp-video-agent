@@ -4,13 +4,13 @@ VSP Video Agent — Command Line Interface for Agents & Developers.
 Zero external dependencies (uses stdlib argparse and urllib).
 """
 
-import sys
-import os
 import argparse
-import urllib.request
-import urllib.error
 import json
+import os
+import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 BASE_URL = os.environ.get("VIBE_VIDEO_API_URL", "http://localhost:8000")
@@ -249,13 +249,13 @@ def cmd_generate(args):
 
     if not health.get("a100_ready"):
         gpu = health.get("gpu") or "Unknown / CPU"
-        print(f"❌ STOPPING EXECUTION: NVIDIA A100 GPU is strictly required for video generation.")
+        print("❌ STOPPING EXECUTION: NVIDIA A100 GPU is strictly required for video generation.")
         print(f"   Currently detected runtime: {gpu}")
         print("👉 Switch the JarvisLabs instance to an A100.")
         sys.exit(1)
 
     print(f"✅ Verified Hardware: {health.get('gpu')}")
-    print(f"=== Dispatching Video Generation to JarvisLabs A100 ===")
+    print("=== Dispatching Video Generation to JarvisLabs A100 ===")
     print(f"Prompt: \"{args.prompt}\"")
     print(f"Model: Wan 2.1 {args.model}")
     print(f"Aspect Ratio: {args.ratio}, Duration: {args.duration}s, Steps: {args.steps}")

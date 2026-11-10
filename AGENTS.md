@@ -6,6 +6,73 @@ terminal bots) working on this repo.
 **This project is JarvisLabs-only and CLI-first.** Every GPU operation is an SSH
 command against an on-demand JarvisLabs instance, and the app has no web UI.
 
+Read **How This Codebase Stays Small** before adding any code.
+
+---
+
+## 📏 How This Codebase Stays Small (read before writing code)
+
+This repository is maintained mostly by coding agents. Agents append to whatever
+file the task names, so the layout is enforced mechanically rather than by good
+intentions. Three gates run in CI on every push.
+
+### Definition of done
+
+A change is not finished until all three pass:
+
+```bash
+.venv/bin/ruff check .
+.venv/bin/python scripts/check_quality.py
+.venv/bin/python -m pytest
+```
+
+They take about two seconds and need no GPU. If a test needs a GPU, it is testing
+at the wrong layer — use `tests/fakes.py` instead.
+
+### Where code goes
+
+| You are adding… | Put it in | Never in |
+| :--- | :--- | :--- |
+| An HTTP endpoint | `server/api/<feature>.py` (parse → call → serialize) | `server/main.py` |
+| An engine or payload builder | `server/domain/` | `server/main.py` |
+| A transport method | `server/gpu.py` **and** `tests/fakes.py` | a router |
+| A CLI command | `cli.py` | `server/` |
+| Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
+
+`server/main.py` is **wiring only**. It is already at its cap: if you need a new
+line there, extract a module first. Same for `scripts/wan_animate_runner.py`,
+which still mixes provisioning, ffmpeg, upload, ComfyUI control and teardown —
+split it when you next touch it.
+
+### Hard limits — `quality/budgets.json`
+
+| Rule | Limit |
+| :--- | :--- |
+| New file | 500 lines (warn at 300) |
+| Function | 120 lines (warn at 80) |
+| `server/jarvis/` | frozen, verified by sha256 |
+
+The budget file is a **ratchet**: limits may go down, never up. Raising one is a
+deliberate edit that appears in review as a change to that file.
+
+### Frozen vendored code
+
+`server/jarvis/` is third-party. Do not edit, reformat or "improve" it — the gate
+fails on a checksum mismatch. To upgrade it, re-vendor the files and update the
+hashes in `quality/budgets.json` in the same commit.
+
+### Test pyramid
+
+| File | Covers |
+| :--- | :--- |
+| `tests/test_payloads.py` | golden strings for the generated GPU scripts (4k+1 frames, offload, ftfy, torchao) |
+| `tests/test_job_lifecycle.py` | queue → stage → spawn → poll → download, on `FakeGPU` |
+| `tests/test_api.py` | status codes and the A100 guardrail |
+| `tests/test_contracts.py` | route snapshot and forbidden transport vocabulary |
+| `tests/test_quality_gate.py` | the gate itself |
+
+Add the regression test in the cheapest layer that can catch it.
+
 ---
 
 ## ⛔ STRICT HARDWARE MANDATE: NVIDIA A100 GPU ONLY
@@ -26,13 +93,20 @@ command against an on-demand JarvisLabs instance, and the app has no web UI.
 * **Compute worker:** JarvisLabs GPU instance (A100 40 GB) running ComfyUI or the
   Wan diffusers pipeline.
 * **Transport:** SSH only, via the vendored harness in `server/jarvis/`
-  (`JarvisLabsClient`). No `vspagent` dependency, no sibling checkout.
-* **Backend:** FastAPI on `http://localhost:8000` (`server/main.py`).
+  (`JarvisLabsClient`). Frozen by checksum; never edited in place.
+* **Backend:** FastAPI on `http://localhost:8000`. `server/main.py` is wiring;
+  feature routers belong in `server/api/`.
 * **GPU adapter:** `server/gpu.py` — async wrapper used by the API jobs.
+* **Domain:** pure Python (no FastAPI, no transport) in `server/domain/` — job
+  state machine, payload builders, frame/resolution rules.
 * **Engines:** Wan 2.1 (`1.3B` draft, `14B` cinematic, `I2V-14B`), and
   Wan2.2-Animate-14B for character replacement.
-* **CLI:** `cli.py` (API client + direct `gpu` commands) and
+* **CLI:** `cli.py` (HTTP client + direct `gpu` commands) and
   `scripts/wan_animate_runner.py` (provision → render → download → destroy).
+
+`server/api/` and `server/domain/` do not exist yet. Create them the first time
+you need them instead of growing `server/main.py`; the import rules in
+`scripts/check_quality.py` already enforce their boundaries.
 
 ---
 

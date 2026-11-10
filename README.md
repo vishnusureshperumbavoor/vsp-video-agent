@@ -130,6 +130,31 @@ longer input.
 
 ---
 
+## 🧪 Development
+
+This repo is written mostly by coding agents, so the layout is enforced by CI
+rather than by convention. A change is done when all three pass — they take about
+two seconds and need no GPU:
+
+```bash
+.venv/bin/ruff check .
+.venv/bin/python scripts/check_quality.py   # size ratchet + import boundaries
+.venv/bin/python -m pytest
+```
+
+- **Size ratchet:** `quality/budgets.json` caps every file and function at its
+  current size. Limits may go down, never up.
+- **Frozen vendor:** `server/jarvis/` is checksummed. Re-vendor it, don't edit it.
+- **Architecture:** `scripts/check_quality.py` enforces the import layers, so a
+  router cannot reach into the transport and the domain stays pure Python.
+- **Free tests:** `tests/fakes.py` provides `FakeGPU`, so the whole job lifecycle
+  runs in-process for ₹0 instead of a real render.
+
+`AGENTS.md` has the ownership map: which layer a new endpoint, engine or
+transport method belongs to.
+
+---
+
 ## 📂 Project Structure
 
 ```
@@ -146,6 +171,8 @@ vsp-video-agent/
 ├── public/
 │   ├── videos/              # Generated MP4s + metadata.json
 │   └── uploads/             # Reference images and driving clips
+├── tests/                   # FakeGPU + payload, lifecycle, API, contract tests
+├── quality/budgets.json     # Size ratchet and frozen-vendor checksums
 ├── cli.py                   # Agent/developer CLI
 ├── backend_start.sh
 ├── requirements.txt         # Backend

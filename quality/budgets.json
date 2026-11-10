@@ -1,0 +1,30 @@
+{
+  "$comment": [
+    "RATCHET FILE. Limits may only go DOWN.",
+    "Raising a limit is a deliberate act: it shows up in review as an edit to this file.",
+    "If you need to add a line to a file that is at its cap, extract something first.",
+    "Caps are the size at the time the gate was introduced, not an aspiration."
+  ],
+  "default_file_max": 500,
+  "default_file_warn": 300,
+  "default_function_max": 120,
+  "default_function_warn": 80,
+  "files": {
+    "cli.py": 406,
+    "server/gpu.py": 151,
+    "server/main.py": 492,
+    "server/wan_worker.py": 219,
+    "scripts/wan_animate_remote.py": 86,
+    "scripts/wan_animate_runner.py": 947
+  },
+  "functions": {
+    "scripts/wan_animate_runner.py::main": 150,
+    "server/main.py::run_detached_job": 115
+  },
+  "vendored": {
+    "$comment": "Frozen third-party code. Do not edit; re-vendor and update the hash instead.",
+    "server/jarvis/__init__.py": "14a0c770fd705f83797ca82ab525650bd998de2b98bc4468b4d461559f9b1678",
+    "server/jarvis/client.py": "f347e8b1ca1f690e35366410a44e8146866e4513bd0d45189a67b9950874b70c",
+    "server/jarvis/tunnel.py": "f1812d5ef538ffd610fa31d93d034b13f3a3574a4b56ce6664f18e6ff0f37727"
+  }
+}

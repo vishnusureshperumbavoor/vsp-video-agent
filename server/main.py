@@ -12,7 +12,7 @@ import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,12 +53,12 @@ app.add_middleware(
 app.mount("/videos", StaticFiles(directory=str(VIDEOS_DIR)), name="videos")
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
-jobs: Dict[str, Dict[str, Any]] = {}
+jobs: dict[str, dict[str, Any]] = {}
 
 
 class T2VRequest(BaseModel):
     prompt: str
-    negative_prompt: Optional[str] = "low quality, blurry, distorted, flickering, artifacts"
+    negative_prompt: str | None = "low quality, blurry, distorted, flickering, artifacts"
     aspect_ratio: str = Field(default="16:9", description="16:9, 9:16, 1:1")
     duration: int = Field(default=5, description="Video duration in seconds (1-10)")
     steps: int = Field(default=25, description="Inference steps (15-50)")
@@ -67,21 +67,21 @@ class T2VRequest(BaseModel):
 
 
 class StitchRequest(BaseModel):
-    video_filenames: List[str]
-    output_filename: Optional[str] = None
+    video_filenames: list[str]
+    output_filename: str | None = None
 
 
-def load_metadata() -> List[Dict[str, Any]]:
+def load_metadata() -> list[dict[str, Any]]:
     if METADATA_FILE.exists():
         try:
-            with open(METADATA_FILE, "r") as f:
+            with open(METADATA_FILE) as f:
                 return json.load(f)
         except Exception:
             return []
     return []
 
 
-def save_metadata(data: List[Dict[str, Any]]):
+def save_metadata(data: list[dict[str, Any]]):
     with open(METADATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
@@ -91,7 +91,7 @@ async def verify_a100() -> str:
     try:
         info = await internal_gpu_client.probe()
     except GPUError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not info["connected"]:
         raise HTTPException(
@@ -187,9 +187,9 @@ async def run_detached_job(
     job_id: str,
     script_content: str,
     output_filename: str,
-    metadata: Dict[str, Any],
-    local_upload_path: Optional[str] = None,
-    remote_upload_path: Optional[str] = None,
+    metadata: dict[str, Any],
+    local_upload_path: str | None = None,
+    remote_upload_path: str | None = None,
 ):
     """Stage → spawn detached → poll log → download.
 
@@ -457,11 +457,13 @@ async def stitch_videos(req: StitchRequest):
     ]
 
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(cmd, check=True, capture_output=True)
     except Exception as exc:
         if list_file_path.exists():
             list_file_path.unlink()
-        raise HTTPException(status_code=500, detail=f"FFmpeg stitching failed: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"FFmpeg stitching failed: {exc}"
+        ) from exc
 
     if list_file_path.exists():
         list_file_path.unlink()

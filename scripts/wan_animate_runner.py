@@ -137,7 +137,7 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def die(message: str) -> "None":
+def die(message: str) -> None:
     raise SystemExit(message)
 
 
@@ -922,7 +922,7 @@ def main() -> int:
 
     finally:
         try:
-            if client and machine_id:
+            if machine_id:
                 _cleanup_state(machine_id)
         finally:
             should_destroy = created and not args.keep_instance

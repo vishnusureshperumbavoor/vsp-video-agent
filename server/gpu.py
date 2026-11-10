@@ -12,7 +12,7 @@ import base64
 import re
 import shlex
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from server.jarvis import JarvisLabsClient
 
@@ -30,11 +30,11 @@ class JarvisGPU:
 
     def __init__(self) -> None:
         self.client = JarvisLabsClient()
-        self._gpu_info: Optional[str] = None
-        self._instance_id: Optional[str] = None
+        self._gpu_info: str | None = None
+        self._instance_id: str | None = None
 
     # ------------------------------------------------------------------ state
-    def _active(self) -> Optional[Dict[str, Any]]:
+    def _active(self) -> dict[str, Any] | None:
         inst = self.client.get_active_instance()
         if inst and str(inst.get("status", "")).lower() == "running":
             self._instance_id = str(inst.get("machine_id"))
@@ -46,12 +46,12 @@ class JarvisGPU:
         return self._active() is not None
 
     @property
-    def instance_id(self) -> Optional[str]:
+    def instance_id(self) -> str | None:
         self._active()
         return self._instance_id
 
     @property
-    def gpu_info(self) -> Optional[str]:
+    def gpu_info(self) -> str | None:
         """Last probed GPU name, or None before :meth:`probe` has run."""
         return self._gpu_info
 
@@ -71,7 +71,7 @@ class JarvisGPU:
         return await asyncio.to_thread(self._run, command, timeout)
 
     # ----------------------------------------------------------------- public
-    async def probe(self) -> Dict[str, Any]:
+    async def probe(self) -> dict[str, Any]:
         """Check SSH reachability and read the GPU identity."""
         code, out = await self._arun(
             "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1"
@@ -80,7 +80,7 @@ class JarvisGPU:
         self._gpu_info = name or None
         return {"connected": code == 0 and bool(name), "gpu": name, "instance_id": self._instance_id}
 
-    async def execute_code(self, code: str, timeout: float = 600.0) -> Dict[str, Any]:
+    async def execute_code(self, code: str, timeout: float = 600.0) -> dict[str, Any]:
         """Run Python ``code`` on the GPU box and return its output.
 
         The code is base64-encoded so quoting, newlines and shell metacharacters
