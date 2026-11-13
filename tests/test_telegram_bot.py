@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import telegram_bot  # noqa: E402
 from telegram_bot import (  # noqa: E402
     BotError,
+    character_commands_allowed,
     describe_characters,
     http_json,
     is_allowed,
@@ -79,6 +80,15 @@ def test_allowlist_rejects_other_chats() -> None:
     assert is_allowed(111, 222, 855227717) is False
 
 
+def test_character_commands_are_private_when_an_owner_is_set() -> None:
+    assert character_commands_allowed(855227717, 855227717) is True
+    assert character_commands_allowed(111, 855227717) is False
+
+
+def test_character_commands_are_open_without_an_owner() -> None:
+    assert character_commands_allowed(111, 0) is True
+
+
 def test_backend_detail_is_shown_without_http_noise(monkeypatch) -> None:
     def boom(request, timeout=0):
         raise urllib.error.HTTPError(
@@ -93,3 +103,13 @@ def test_backend_detail_is_shown_without_http_noise(monkeypatch) -> None:
 
     with pytest.raises(BotError, match="create and select a character first"):
         http_json("Backend", "http://backend.test/api/images", {})
+
+
+def test_network_timeout_is_wrapped_as_a_bot_error(monkeypatch) -> None:
+    def boom(request, timeout=0):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(telegram_bot.urllib.request, "urlopen", boom)
+
+    with pytest.raises(BotError, match="unreachable"):
+        http_json("Telegram", "http://telegram.test/getUpdates", {})

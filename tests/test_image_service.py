@@ -28,6 +28,7 @@ def make_settings(tmp_path: Path, **overrides) -> Settings:
         "bot_internal_token": "bot-token",
         "public_base_url": "",
         "daily_image_limit": 10,
+        "global_daily_limit": 100,
         "default_steps": 4,
         "request_timeout": 10.0,
         "auto_dispatch": False,
@@ -129,11 +130,25 @@ def test_selecting_an_unknown_character_fails(tmp_path: Path) -> None:
         service.select_character(7, "does-not-exist")
 
 
-def test_job_without_a_character_explains_what_to_do(tmp_path: Path) -> None:
-    service, _ = make_service(tmp_path)
+def test_prompt_only_job_uses_the_raw_prompt(tmp_path: Path) -> None:
+    service, fake = make_service(tmp_path)
 
-    with pytest.raises(NotFound, match="character"):
-        service.create_job(owner_id=7, scene="a rooftop")
+    job = service.create_job(owner_id=7, scene="a cat on a rooftop")
+    asyncio.run(service.process(job.id))
+
+    stored = service.get_job(7, job.id)
+    assert stored.status == "completed"
+    assert stored.character_id == ""
+    assert fake.calls[0]["prompt"] == "a cat on a rooftop"
+
+
+def test_global_daily_cap_stops_runaway_public_use(tmp_path: Path) -> None:
+    service, _ = make_service(tmp_path, daily_image_limit=0, global_daily_limit=1)
+
+    service.create_job(owner_id=7, scene="first")
+
+    with pytest.raises(QuotaExceeded):
+        service.create_job(owner_id=8, scene="second")
 
 
 def test_start_requeues_jobs_left_queued_by_a_restart(tmp_path: Path) -> None:

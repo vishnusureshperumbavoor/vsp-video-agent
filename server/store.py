@@ -197,6 +197,14 @@ class Store:
             ).fetchone()
         return int(row["total"])
 
+    def count_all_jobs_since(self, since: float) -> int:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total FROM image_jobs WHERE created_at >= ?",
+                (since,),
+            ).fetchone()
+        return int(row["total"])
+
     def pending_job_ids(self) -> list[str]:
         placeholders = ",".join("?" for _ in ACTIVE_STATUSES)
         with self._connection() as conn:

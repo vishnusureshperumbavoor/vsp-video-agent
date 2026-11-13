@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from server.domain.character import Character
-from server.domain.image_job import ImageJob
+from server.domain.image_job import ImageJob, validate_prompt
 from server.settings import Settings
 from server.storage import ImageStorage
 from server.store import Store
@@ -102,15 +102,23 @@ class ImageJobService:
         dispatch: bool | None = None,
     ) -> ImageJob:
         self._resume_once()
-        character = self._resolve_character(owner_id, character_id)
+        character = self._character_for(owner_id, character_id)
         self._check_quota(owner_id)
+        if character is None:
+            prompt = validate_prompt(scene)
+            job_character_id = ""
+            job_seed = 42 if seed is None else seed
+        else:
+            prompt = character.compose_prompt(scene)
+            job_character_id = character.id
+            job_seed = character.seed if seed is None else seed
         job = ImageJob.create(
             owner_id=owner_id,
-            character_id=character.id,
-            prompt=character.compose_prompt(scene),
+            character_id=job_character_id,
+            prompt=prompt,
             size=size,
             steps=self._settings.default_steps if steps is None else steps,
-            seed=character.seed if seed is None else seed,
+            seed=job_seed,
         )
         self._store.create_job(job)
         should_dispatch = self._settings.auto_dispatch if dispatch is None else dispatch
@@ -192,19 +200,21 @@ class ImageJobService:
         return Path(root) / str(job.owner_id) / f"{job.id}.png"
 
     # ---------------------------------------------------------------- helpers
-    def _resolve_character(self, owner_id: int, character_id: str | None) -> Character:
-        wanted = character_id or self._store.get_active_character_id(owner_id)
-        if not wanted:
-            raise NotFound("create and select a character first")
-        return self.get_character(owner_id, wanted)
+    def _character_for(self, owner_id: int, character_id: str | None) -> Character | None:
+        """Use the requested character, else the user's active one, else none."""
+        if character_id:
+            return self.get_character(owner_id, character_id)
+        active = self._store.get_active_character_id(owner_id)
+        return self.get_character(owner_id, active) if active else None
 
     def _check_quota(self, owner_id: int) -> None:
+        since = time.time() - DAY_SECONDS
         limit = self._settings.daily_image_limit
-        if limit <= 0:
-            return
-        used = self._store.count_jobs_since(owner_id, time.time() - DAY_SECONDS)
-        if used >= limit:
+        if limit > 0 and self._store.count_jobs_since(owner_id, since) >= limit:
             raise QuotaExceeded(f"daily limit of {limit} images reached")
+        global_limit = self._settings.global_daily_limit
+        if global_limit > 0 and self._store.count_all_jobs_since(since) >= global_limit:
+            raise QuotaExceeded("today's global image budget is exhausted; try tomorrow")
 
     def _resume_once(self, skip: str | None = None) -> None:
         """Requeue jobs that were left queued or running by a restart."""

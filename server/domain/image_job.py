@@ -80,8 +80,6 @@ class ImageJob:
     ) -> ImageJob:
         if owner_id <= 0:
             raise InvalidJob("owner_id must be positive")
-        if not character_id:
-            raise InvalidJob("character_id is required")
         moment = time.time() if now is None else now
         return cls(
             id=uuid.uuid4().hex,

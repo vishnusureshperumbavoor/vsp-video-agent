@@ -25,13 +25,21 @@ from pathlib import Path
 import requests
 
 MAX_INFLIGHT = 4
-POLL_SECONDS = 180
+POLL_SECONDS = 600
 HELP = (
-    "Send me a scene and I will make a picture of your character.\n\n"
-    "/character Name | how she looks  — create her\n"
-    "/characters — list your characters\n"
-    "/select <id> — choose who to draw\n"
+    "Send me a scene and I will make a picture.\n\n"
     "/imagine a rooftop at sunset — generate\n"
+    "/last — resend the newest picture\n"
+    "/status — recent pictures\n\n"
+    "Optional character mode:\n"
+    "/character Name | how she looks\n"
+    "/characters — list your characters\n"
+    "/select <id> — choose who to draw"
+)
+PUBLIC_HELP = (
+    "Send /imagine <scene> and I will make a picture.\n\n"
+    "Example: /imagine a lighthouse at dusk, 35mm photo\n"
+    "/last — resend the newest picture\n"
     "/status — recent pictures"
 )
 
@@ -60,6 +68,11 @@ def is_allowed(chat_id, owner_id, allowed_chat_id: int) -> bool:
     return chat_id == allowed_chat_id or owner_id == allowed_chat_id
 
 
+def character_commands_allowed(owner_id, character_owner: int) -> bool:
+    """Characters are private when an owner is configured; prompts stay public."""
+    return not character_owner or owner_id == character_owner
+
+
 def http_json(
     label: str,
     url: str,
@@ -86,7 +99,7 @@ def http_json(
             detail = body
         message = str(detail).strip()[:300] or f"{label} failed (HTTP {exc.code})."
         raise BotError(message) from exc
-    except urllib.error.URLError as exc:
+    except OSError as exc:
         raise BotError(f"{label} is unreachable.") from exc
 
 
@@ -207,7 +220,9 @@ def deliver(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, job_id
         bot.send_message(chat_id, str(exc))
 
 
-def handle_message(backend: Backend, update: dict) -> tuple[int, str, str | None] | None:
+def handle_message(
+    backend: Backend, update: dict, character_owner: int = 0
+) -> tuple[int, str, str | None] | None:
     """Return (chat_id, reply, job_id). job_id is set only for /imagine."""
     message = update.get("message") or {}
     chat_id = (message.get("chat") or {}).get("id")
@@ -217,7 +232,12 @@ def handle_message(backend: Backend, update: dict) -> tuple[int, str, str | None
         return None
     command, argument = parse_command(text)
     if command in ("", "start", "help"):
-        return chat_id, HELP, None
+        help_text = HELP if character_commands_allowed(owner_id, character_owner) else PUBLIC_HELP
+        return chat_id, help_text, None
+    if command in ("character", "characters", "select") and not character_commands_allowed(
+        owner_id, character_owner
+    ):
+        return chat_id, "Characters are private. Use /imagine <scene> for a picture.", None
     if command == "character":
         name, appearance = parse_character(argument)
         character = backend.create_character(owner_id, name, appearance)
@@ -235,13 +255,21 @@ def handle_message(backend: Backend, update: dict) -> tuple[int, str, str | None
             raise BotError("Use: /imagine a rooftop at sunset")
         job = backend.create_image(owner_id, argument)
         return chat_id, "Queued. I will send it when it is ready.", job["id"]
+    if command == "last":
+        completed = next(
+            (job for job in backend.list_images(owner_id) if job.get("status") == "completed"),
+            None,
+        )
+        if completed is None:
+            return chat_id, "No finished pictures yet.", None
+        return chat_id, "Here is your latest picture.", completed["id"]
     if command == "status":
         jobs = backend.list_images(owner_id)[:5]
         if not jobs:
             return chat_id, "No pictures yet.", None
         lines = [f"{item['status']}: {item['prompt'][:70]}" for item in jobs]
         return chat_id, "\n".join(lines), None
-    return chat_id, HELP, None
+    return chat_id, PUBLIC_HELP, None
 
 
 def main() -> int:
@@ -254,6 +282,9 @@ def main() -> int:
     bot = Telegram(token)
     backend = Backend(os.environ.get("BACKEND_URL", "http://127.0.0.1:8000"), backend_token)
     allowed_chat_id = int(os.environ.get("TELEGRAM_CHAT_ID", "0") or 0)
+    character_owner = int(os.environ.get("TELEGRAM_OWNER_ID", "0") or 0)
+    if not character_owner:
+        character_owner = allowed_chat_id
     inflight = threading.Semaphore(MAX_INFLIGHT)
     offset = 0
     print("bot listening; press Ctrl-C to stop", flush=True)
@@ -272,7 +303,7 @@ def main() -> int:
             if not is_allowed(chat_id, owner_id, allowed_chat_id):
                 continue
             try:
-                result = handle_message(backend, update)
+                result = handle_message(backend, update, character_owner)
                 if result is None:
                     continue
                 result_chat, reply, job_id = result
@@ -289,6 +320,13 @@ def main() -> int:
                 if chat_id:
                     try:
                         bot.send_message(chat_id, str(exc))
+                    except BotError:
+                        pass
+            except Exception as exc:  # one bad update must not kill the bot
+                print(f"update failed: {type(exc).__name__}", flush=True)
+                if chat_id:
+                    try:
+                        bot.send_message(chat_id, "Something went wrong. Try again.")
                     except BotError:
                         pass
 

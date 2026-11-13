@@ -32,6 +32,7 @@ class Settings:
     bot_internal_token: str
     public_base_url: str
     daily_image_limit: int
+    global_daily_limit: int
     default_steps: int
     request_timeout: float
     auto_dispatch: bool
@@ -46,6 +47,7 @@ class Settings:
             bot_internal_token=os.environ.get("BOT_INTERNAL_TOKEN", ""),
             public_base_url=os.environ.get("PUBLIC_BASE_URL", "").rstrip("/"),
             daily_image_limit=int(os.environ.get("DAILY_IMAGE_LIMIT", "10")),
+            global_daily_limit=int(os.environ.get("GLOBAL_DAILY_LIMIT", "100")),
             default_steps=int(os.environ.get("IMAGE_DEFAULT_STEPS", "4")),
             request_timeout=float(os.environ.get("IMAGE_TIMEOUT", "180")),
             auto_dispatch=_env_bool("IMAGE_AUTO_DISPATCH", True),

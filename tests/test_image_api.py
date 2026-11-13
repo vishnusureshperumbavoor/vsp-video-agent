@@ -121,11 +121,13 @@ def test_unknown_job_returns_404(client) -> None:
     assert client.get("/api/images/does-not-exist", headers=auth()).status_code == 404
 
 
-def test_image_requires_a_character(client) -> None:
-    response = client.post("/api/images", headers=auth(), json={"prompt": "a rooftop"})
+def test_prompt_only_image_needs_no_character(client) -> None:
+    response = client.post("/api/images", headers=auth(), json={"prompt": "a cat"})
 
-    assert response.status_code == 404
-    assert "character" in response.json()["detail"]
+    assert response.status_code == 201
+    job = response.json()
+    assert job["character_id"] == ""
+    assert job["prompt"] == "a cat"
 
 
 def test_auto_dispatch_finishes_on_the_server_event_loop(auto_client) -> None:

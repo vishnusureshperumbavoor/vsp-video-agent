@@ -254,11 +254,26 @@ Create a character in the bot, then generate:
 ```
 
 The backend stores jobs in `data/girlfriend.db`, writes PNGs to
-`public/images/<telegram-id>/` and serves them at `/images/...`. Set
-`TELEGRAM_CHAT_ID` to lock the bot to your chat. The bot uploads the PNG bytes
-to Telegram, so the backend does **not** need a public URL for photos; set
-`PUBLIC_BASE_URL` only if a web client needs absolute image links. Set
-`DAILY_IMAGE_LIMIT` as the per-user cap (`0` disables it).
+`public/images/<telegram-id>/` and serves them at `/images/...`. The bot uploads
+the PNG bytes to Telegram, so the backend does **not** need a public URL for
+photos; set `PUBLIC_BASE_URL` only if a web client needs absolute image links.
+
+### Public mode versus your private character
+
+Prompt-only generation is the default: anyone who opens the bot can send
+`/imagine <scene>` with no setup. Characters are optional and stay private to
+the owner:
+
+```bash
+TELEGRAM_CHAT_ID=            # empty = anyone can use the bot
+TELEGRAM_OWNER_ID=855227717  # only this user can /character, /characters, /select
+DAILY_IMAGE_LIMIT=10         # per user
+GLOBAL_DAILY_LIMIT=100       # hard cap across all users
+```
+
+Your own `/imagine` still uses your selected character; a public user has no
+character, so they get plain prompt-to-image. `/last` resends the newest
+picture, which also recovers deliveries lost when the bot restarts.
 
 Run the backend as **one process** (`uvicorn` default). The queue and the SQLite
 writer are per-process; scaling to several API instances needs Postgres and a
