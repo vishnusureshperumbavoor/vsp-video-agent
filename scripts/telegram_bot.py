@@ -20,6 +20,9 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+import requests
 
 MAX_INFLIGHT = 4
 POLL_SECONDS = 180
@@ -35,6 +38,26 @@ HELP = (
 
 class BotError(RuntimeError):
     """A failure the user is allowed to see."""
+
+
+def load_dotenv(path: str = ".env") -> None:
+    """Load .env without overriding variables already in the environment."""
+    file = Path(path)
+    if not file.exists():
+        return
+    for line in file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+def is_allowed(chat_id, owner_id, allowed_chat_id: int) -> bool:
+    """An empty allowlist leaves the bot open; a set one locks it to that chat."""
+    if not allowed_chat_id:
+        return True
+    return chat_id == allowed_chat_id or owner_id == allowed_chat_id
 
 
 def http_json(
@@ -92,8 +115,18 @@ class Telegram:
     def send_message(self, chat_id: int, text: str) -> None:
         self.call("sendMessage", {"chat_id": chat_id, "text": text[:4000]})
 
-    def send_photo(self, chat_id: int, url: str, caption: str) -> None:
-        self.call("sendPhoto", {"chat_id": chat_id, "photo": url, "caption": caption[:900]})
+    def send_photo_bytes(self, chat_id: int, data: bytes, caption: str) -> None:
+        try:
+            response = requests.post(
+                f"{self._base}/sendPhoto",
+                data={"chat_id": chat_id, "caption": caption[:900]},
+                files={"photo": ("image.png", data, "image/png")},
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            raise BotError("Telegram is unreachable.") from exc
+        if not response.ok:
+            raise BotError(f"Telegram rejected the photo (HTTP {response.status_code}).")
 
 
 class Backend:
@@ -149,13 +182,22 @@ def wait_for_image(backend: Backend, owner_id: int, job_id: str) -> dict:
     raise BotError("Timed out waiting for the GPU. Try again once it is resumed.")
 
 
+def fetch_image(url: str) -> bytes:
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return response.content
+    except requests.RequestException as exc:
+        raise BotError("Could not fetch the generated image.") from exc
+
+
 def deliver(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, job_id: str) -> None:
     try:
         job = wait_for_image(backend, owner_id, job_id)
         url = job.get("image_url") or ""
         if url.startswith("/"):
             url = f"{backend.base_url}{url}"
-        bot.send_photo(chat_id, url, job.get("prompt", "")[:900])
+        bot.send_photo_bytes(chat_id, fetch_image(url), job.get("prompt", "")[:900])
     except BotError as exc:
         bot.send_message(chat_id, str(exc))
 
@@ -198,6 +240,7 @@ def handle_message(backend: Backend, update: dict) -> tuple[int, str, str | None
 
 
 def main() -> int:
+    load_dotenv()
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     backend_token = os.environ.get("BOT_INTERNAL_TOKEN", "")
     if not token or not backend_token:
@@ -205,6 +248,7 @@ def main() -> int:
         return 2
     bot = Telegram(token)
     backend = Backend(os.environ.get("BACKEND_URL", "http://127.0.0.1:8000"), backend_token)
+    allowed_chat_id = int(os.environ.get("TELEGRAM_CHAT_ID", "0") or 0)
     inflight = threading.Semaphore(MAX_INFLIGHT)
     offset = 0
     print("bot listening; press Ctrl-C to stop", flush=True)
@@ -220,6 +264,8 @@ def main() -> int:
             message = update.get("message") or {}
             chat_id = (message.get("chat") or {}).get("id")
             owner_id = (message.get("from") or {}).get("id")
+            if not is_allowed(chat_id, owner_id, allowed_chat_id):
+                continue
             try:
                 result = handle_message(backend, update)
                 if result is None:

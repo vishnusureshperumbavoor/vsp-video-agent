@@ -14,7 +14,13 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from telegram_bot import BotError, describe_characters, parse_character, parse_command  # noqa: E402
+from telegram_bot import (  # noqa: E402
+    BotError,
+    describe_characters,
+    is_allowed,
+    parse_character,
+    parse_command,
+)
 
 
 def test_plain_text_is_not_a_command() -> None:
@@ -51,3 +57,19 @@ def test_describe_characters_lists_ids() -> None:
 
     assert "Ava" in text
     assert "abc123" in text
+
+
+def test_empty_allowlist_accepts_any_chat() -> None:
+    assert is_allowed(111, 111, 0) is True
+
+
+def test_allowlist_accepts_the_configured_chat() -> None:
+    assert is_allowed(855227717, 999, 855227717) is True
+
+
+def test_allowlist_accepts_the_configured_user_in_a_group() -> None:
+    assert is_allowed(-100123, 855227717, 855227717) is True
+
+
+def test_allowlist_rejects_other_chats() -> None:
+    assert is_allowed(111, 222, 855227717) is False

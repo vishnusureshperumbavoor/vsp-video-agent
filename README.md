@@ -255,8 +255,10 @@ Create a character in the bot, then generate:
 
 The backend stores jobs in `data/girlfriend.db`, writes PNGs to
 `public/images/<telegram-id>/` and serves them at `/images/...`. Set
-`PUBLIC_BASE_URL` to the backend's public origin so Telegram can fetch the
-photo, and set `DAILY_IMAGE_LIMIT` as the per-user cap (`0` disables it).
+`TELEGRAM_CHAT_ID` to lock the bot to your chat. The bot uploads the PNG bytes
+to Telegram, so the backend does **not** need a public URL for photos; set
+`PUBLIC_BASE_URL` only if a web client needs absolute image links. Set
+`DAILY_IMAGE_LIMIT` as the per-user cap (`0` disables it).
 
 Run the backend as **one process** (`uvicorn` default). The queue and the SQLite
 writer are per-process; scaling to several API instances needs Postgres and a
