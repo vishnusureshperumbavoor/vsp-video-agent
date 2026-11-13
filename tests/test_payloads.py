@@ -87,6 +87,15 @@ def test_wan_loads_with_low_cpu_memory(builder: str) -> None:
     assert "low_cpu_mem_usage=True" in script
 
 
+@pytest.mark.parametrize("builder", ["t2v", "i2v"])
+def test_wan_cache_survives_a_pause(builder: str) -> None:
+    if builder == "t2v":
+        script = generate_t2v_script(prompt="x")
+    else:
+        script = generate_i2v_script(remote_image_path="/tmp/x.png", prompt="x")
+    assert 'HF_HOME", "/home/jl_fs/hf"' in script
+
+
 def test_scripts_write_to_the_remote_job_dir() -> None:
     script = generate_t2v_script(prompt="x", output_filename="out.mp4")
     assert f'"{REMOTE_JOB_DIR}/out.mp4"' in script

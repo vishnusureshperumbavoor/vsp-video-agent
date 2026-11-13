@@ -218,7 +218,7 @@ async def run_detached_job(
 
         job["logs"].append("Spawning detached GPU process...")
         pid = await internal_gpu_client.spawn(
-            f"python3 -u {remote_script}",
+            f"{os.environ.get('REMOTE_PYTHON', 'python3')} -u {remote_script}",
             log_path=remote_log,
             workdir=REMOTE_JOB_DIR,
         )

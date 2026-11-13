@@ -117,6 +117,15 @@ def test_traceback_in_log_marks_the_job_failed(tmp_path, monkeypatch) -> None:
     assert "ValueError: boom" in job["error"]
 
 
+def test_video_script_uses_the_configured_remote_python(gpu, monkeypatch) -> None:
+    monkeypatch.setenv("REMOTE_PYTHON", "/home/venv/bin/python")
+    _queue("job-5")
+
+    asyncio.run(main.run_detached_job("job-5", "print(1)", "out.mp4", {}))
+
+    assert gpu.spawned[0].startswith("/home/venv/bin/python -u")
+
+
 def test_download_failure_marks_the_job_failed(gpu, monkeypatch) -> None:
     _queue("job-4")
 

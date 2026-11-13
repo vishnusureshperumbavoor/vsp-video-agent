@@ -84,6 +84,7 @@ def generate_t2v_script(
 
     return f"""import sys, os, gc, time
 import torch
+os.environ.setdefault("HF_HOME", "/home/jl_fs/hf")
 
 for k in list(sys.modules.keys()):
     if "torchao" in k:
@@ -155,6 +156,7 @@ def generate_i2v_script(
 
     return f"""import sys, os, gc, time
 from PIL import Image
+os.environ.setdefault("HF_HOME", "/home/jl_fs/hf")
 
 for k in list(sys.modules.keys()):
     if "torchao" in k:

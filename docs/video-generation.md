@@ -117,8 +117,13 @@ The daily limit is in-process; a bot restart resets it.
 
 - **Paused instance:** the endpoint returns 404/offline. Resume it and retry.
 - **Resume can change the machine ID:** `jl resume` may return a new
-  `machine_id` and public IP. Re-register the running instance with the
-  vendored client before expecting the backend to find it.
+  `machine_id` and public IP. Set `JARVIS_MACHINE_ID` in `.env` to the new ID
+  and restart the backend (or re-register the instance with the vendored
+  client) before expecting the backend to find it.
+- **Pause/resume resets system packages:** a container keeps `/home` but loses
+  global pip installs and `/root/.cache`. Video jobs use `/home/venv/bin/python`
+  (`REMOTE_PYTHON`) and cache Wan under `/home/jl_fs/hf`; the image startup
+  script reinstalls missing video deps on boot.
 - **Missing accelerate:** the `low_cpu_mem_usage` error above.
 - **Frames:** never pass a value that is not `4k + 1`.
 - **SSH:** use `setsid nohup` for detached jobs, `ssh -n`, and never

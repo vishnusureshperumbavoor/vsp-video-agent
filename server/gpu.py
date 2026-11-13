@@ -14,13 +14,12 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from server.instance import select_instance
 from server.jarvis import JarvisLabsClient
 
 # Where job scripts, logs and outputs live on the GPU box.
 REMOTE_ROOT = "/home/vsp_jobs"
 REMOTE_UPLOADS = f"{REMOTE_ROOT}/uploads"
-
-
 class GPUError(RuntimeError):
     """Raised when the GPU box is unreachable or a remote command fails."""
 
@@ -35,7 +34,7 @@ class JarvisGPU:
 
     # ------------------------------------------------------------------ state
     def _active(self) -> dict[str, Any] | None:
-        inst = self.client.get_active_instance()
+        inst = select_instance(self.client.list_instances(), self.client.get_active_instance())
         if inst and str(inst.get("status", "")).lower() == "running":
             self._instance_id = str(inst.get("machine_id"))
             return inst
