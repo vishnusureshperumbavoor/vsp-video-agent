@@ -328,6 +328,22 @@ adapter directly to the transformer's linear layers. Only the adapter file is
 needed (~70 MB); never download the repo's merged model. Any adapter used here
 is adult content: 18+ only, and no real person's likeness without consent.
 
+### Reference-image editing
+
+`POST /edit` on the same GPU service adds FLUX.2 klein 4B reference editing:
+
+```bash
+python scripts/reference_edit.py \
+  --reference face.png \
+  --prompt "Keep the same woman; put her in a sunlit kitchen, fully clothed" \
+  --out kitchen.png
+```
+
+The first call lazily loads FLUX.2 (~13 GB); later edits take about 14 s at
+4 steps. Text-to-image still uses MOSS on `/generate`; `/edit` uses the
+reference image for identity. This is an operator endpoint, not yet wired into
+the Telegram photo flow.
+
 ### Image endpoints
 
 | Method | Endpoint | Description |
@@ -429,9 +445,13 @@ vsp-video-agent/
 │   ├── wan_worker.py        # Wan 2.1 execution payloads
 │   └── jarvis/              # Vendored JarvisLabs harness
 ├── scripts/
-│   ├── image_server.py          # GPU-side diffusers HTTP service
+│   ├── image_server.py          # GPU-side diffusers HTTP service (/generate, /edit)
 │   ├── image_startup.sh         # JarvisLabs container startup script
 │   ├── telegram_bot.py          # bot front door
+│   ├── image_admin.py           # operator CLI for the backend
+│   ├── image_bench.py           # speed benchmark
+│   ├── reference_edit.py        # reference-conditioned edit CLI
+│   ├── gpu_client.py            # shared HTTP client for the tools
 │   ├── wan_animate_runner.py    # Provision → render → download → destroy
 │   ├── wan_animate_workflow.json
 │   ├── wan_animate_remote.py

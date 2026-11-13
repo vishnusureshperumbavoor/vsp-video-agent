@@ -45,6 +45,7 @@ at the wrong layer — use `tests/fakes.py` instead.
 | GPU-side model serving | `scripts/image_server.py` | `server/` |
 | Image operator CLI | `scripts/image_admin.py` | `server/` |
 | Speed benchmark | `scripts/image_bench.py` | the backend |
+| Reference-edit CLI | `scripts/reference_edit.py` | the Telegram flow |
 | Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
 
 `server/main.py` is **wiring only**. It is already at its cap: if you need a new

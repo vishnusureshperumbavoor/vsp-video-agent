@@ -32,6 +32,9 @@ API_TOKEN = os.environ.get("IMAGE_API_TOKEN", "")
 NO_OFFLOAD = os.environ.get("IMAGE_NO_OFFLOAD", "") == "1"
 LORA_DIR = os.environ.get("IMAGE_LORA_DIR", "")
 LORA_SCALE = float(os.environ.get("IMAGE_LORA_SCALE", "0.8"))
+REFERENCE_MODEL_ID = os.environ.get(
+    "REFERENCE_MODEL_ID", "black-forest-labs/FLUX.2-klein-4B"
+)
 SKIP_LAYERS = [
     int(value)
     for value in os.environ.get("IMAGE_SKIP_LAYERS", "22").split(",")
@@ -39,7 +42,20 @@ SKIP_LAYERS = [
 ]
 
 pipe = None
+reference_pipe = None
 lock = asyncio.Lock()
+
+
+def load_reference_pipeline():
+    """FLUX.2 klein is the reference-edit model; load it lazily on first /edit."""
+    import torch
+    from diffusers import Flux2KleinPipeline
+
+    pipeline = Flux2KleinPipeline.from_pretrained(
+        REFERENCE_MODEL_ID, torch_dtype=torch.bfloat16
+    )
+    pipeline.enable_model_cpu_offload()
+    return pipeline
 
 
 def _apply_lora(pipeline, lora_dir: str, scale: float) -> int:
@@ -136,6 +152,16 @@ class GenerateRequest(BaseModel):
     seed: int = 42
 
 
+class EditRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=1000)
+    reference_b64: str
+    width: int = Field(default=1024, ge=256, le=1536)
+    height: int = Field(default=1024, ge=256, le=1536)
+    steps: int = Field(default=4, ge=1, le=50)
+    guidance_scale: float = Field(default=1.0, ge=0.0, le=10.0)
+    seed: int = 42
+
+
 def _validate(request: GenerateRequest) -> None:
     if request.width % 16 or request.height % 16:
         raise HTTPException(status_code=400, detail="width and height must be multiples of 16")
@@ -162,9 +188,41 @@ def _render(request: GenerateRequest) -> bytes:
     return buffer.getvalue()
 
 
+def _edit(request: EditRequest, image) -> bytes:
+    import torch
+
+    global reference_pipe
+    if reference_pipe is None:
+        reference_pipe = load_reference_pipeline()
+    result = reference_pipe(
+        image=[image],
+        prompt=request.prompt,
+        height=request.height,
+        width=request.width,
+        num_inference_steps=request.steps,
+        guidance_scale=request.guidance_scale,
+        generator=torch.Generator("cpu").manual_seed(request.seed),
+    )
+    buffer = io.BytesIO()
+    result.images[0].save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _decode_reference(encoded: str):
+    from PIL import Image
+
+    raw = base64.b64decode(encoded.split(",", 1)[-1])
+    return Image.open(io.BytesIO(raw)).convert("RGB")
+
+
 @app.get("/health")
 async def health() -> dict:
-    return {"ok": pipe is not None, "model": MODEL_ID}
+    return {
+        "ok": pipe is not None,
+        "model": MODEL_ID,
+        "edit_model": REFERENCE_MODEL_ID,
+        "edit_ready": reference_pipe is not None,
+    }
 
 
 @app.post("/generate")
@@ -178,6 +236,26 @@ async def generate(
     async with lock:
         data = await asyncio.to_thread(_render, request)
     return {"image_b64": base64.b64encode(data).decode("ascii")}
+
+
+@app.post("/edit")
+async def edit(
+    request: EditRequest,
+    authorization: Annotated[str, Header()] = "",
+) -> dict:
+    if not secrets.compare_digest(authorization, f"Bearer {API_TOKEN}"):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    _validate(request)
+    try:
+        image = _decode_reference(request.reference_b64)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail="invalid reference image") from exc
+    async with lock:
+        data = await asyncio.to_thread(_edit, request, image)
+    return {
+        "image_b64": base64.b64encode(data).decode("ascii"),
+        "model": REFERENCE_MODEL_ID,
+    }
 
 
 if __name__ == "__main__":

@@ -11,16 +11,12 @@ time. Start with the default 1024/50 to compare against a known number.
 from __future__ import annotations
 
 import argparse
-import base64
-import os
 import sys
-import time
 from pathlib import Path
-
-import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from gpu_client import GPUError, add_service_args, request_image, resolve_service  # noqa: E402
 from telegram_bot import load_dotenv  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,29 +52,18 @@ def run_one(
     }
     if negative_prompt:
         payload["negative_prompt"] = negative_prompt
-    started = time.perf_counter()
-    response = requests.post(
-        f"{url}/generate",
-        json=payload,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    elapsed = time.perf_counter() - started
-    raw = base64.b64decode(response.json()["image_b64"])
+    elapsed, raw = request_image(url, token, "/generate", payload, timeout)
     return elapsed, len(raw)
 
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark the GPU image service")
-    parser.add_argument("--url", help="GPU service URL (default: IMAGE_API_URL)")
-    parser.add_argument("--token", help="GPU bearer token (default: IMAGE_API_TOKEN)")
     parser.add_argument("--prompt", default="a photorealistic portrait in a sunlit cafe")
     parser.add_argument("--negative-prompt", default="")
     parser.add_argument("--sizes", type=parse_list, default=[1024, 768])
     parser.add_argument("--steps", type=parse_list, default=[50, 30])
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--timeout", type=float, default=900.0)
+    add_service_args(parser)
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args(argv)
 
@@ -86,17 +71,12 @@ def parse_args(argv=None) -> argparse.Namespace:
 def main(argv=None) -> int:
     load_dotenv(str(ROOT / ".env"))
     args = parse_args(argv)
-    url = (args.url or os.environ.get("IMAGE_API_URL", "")).rstrip("/")
-    token = args.token or os.environ.get("IMAGE_API_TOKEN", "")
-    if not url:
-        print("IMAGE_API_URL is not set", file=sys.stderr)
+    try:
+        url, token = resolve_service(args.url, args.token)
+    except GPUError as exc:
+        print(exc, file=sys.stderr)
         return 2
-    if not token:
-        print("IMAGE_API_TOKEN is not set", file=sys.stderr)
-        return 2
-    sizes = args.sizes
-    steps = args.steps
-    configs = build_configs(sizes, steps)
+    configs = build_configs(args.sizes, args.steps)
     print(f"{'size':>6} {'steps':>6} {'seconds':>9} {'KB':>8}")
     for size, step in configs:
         if args.dry_run:
@@ -113,7 +93,7 @@ def main(argv=None) -> int:
                 args.seed,
                 args.timeout,
             )
-        except requests.RequestException as exc:
+        except GPUError as exc:
             print(f"{size:>6} {step:>6} failed: {exc}", file=sys.stderr)
             return 1
         print(f"{size:>6} {step:>6} {elapsed:>8.1f}s {size_bytes / 1024:>7.0f}")

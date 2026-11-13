@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from image_admin import format_job, format_seconds  # noqa: E402
 from image_bench import build_configs, parse_list  # noqa: E402
+from reference_edit import build_edit_payload  # noqa: E402
 
 
 def test_parse_list_accepts_spaces() -> None:
@@ -54,3 +55,20 @@ def test_format_job_includes_status_prompt_and_time() -> None:
     assert "completed" in line
     assert "a cat on a windowsill" in line
     assert "62.8s" in line
+
+
+def test_reference_payload_carries_the_edit_settings() -> None:
+    payload = build_edit_payload(
+        "keep the same woman",
+        "base64-reference",
+        size=768,
+        steps=4,
+        guidance=1.0,
+        seed=42,
+    )
+
+    assert payload["reference_b64"] == "base64-reference"
+    assert payload["width"] == 768
+    assert payload["height"] == 768
+    assert payload["steps"] == 4
+    assert payload["guidance_scale"] == 1.0
