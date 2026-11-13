@@ -343,6 +343,30 @@ is adult content: 18+ only, and no real person's likeness without consent.
 All routes require `X-Telegram-Id` and `X-Bot-Token`; only the bot should hold
 the token. The GPU endpoint requires its own `IMAGE_API_TOKEN`.
 
+### Operator tools
+
+```bash
+# Backend, GPU service, active character, recent jobs
+python scripts/image_admin.py doctor
+
+# Characters and mode
+python scripts/image_admin.py characters
+python scripts/image_admin.py select <character_id>
+python scripts/image_admin.py prompt
+
+# Queue and wait, or check recent work
+python scripts/image_admin.py imagine "a rooftop at sunset" --wait
+python scripts/image_admin.py jobs --limit 10
+python scripts/image_admin.py last
+
+# Speed benchmark: calls the GPU directly, bypasses quota, bills GPU time
+python scripts/image_bench.py --dry-run
+python scripts/image_bench.py --sizes 1024,768 --steps 50,30
+```
+
+Both tools read `.env`, so `BOT_INTERNAL_TOKEN`, `TELEGRAM_OWNER_ID`,
+`IMAGE_API_URL` and `IMAGE_API_TOKEN` come from the same place as the bot.
+
 ---
 
 ## REST API

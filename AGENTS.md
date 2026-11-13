@@ -43,6 +43,8 @@ at the wrong layer — use `tests/fakes.py` instead.
 | A GPU image adapter | `server/transport/image_api.py` **and** `tests/fakes.py` | a router |
 | The Telegram front door | `scripts/telegram_bot.py` | `server/` |
 | GPU-side model serving | `scripts/image_server.py` | `server/` |
+| Image operator CLI | `scripts/image_admin.py` | `server/` |
+| Speed benchmark | `scripts/image_bench.py` | the backend |
 | Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
 
 `server/main.py` is **wiring only**. It is already at its cap: if you need a new
@@ -94,6 +96,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_image_service.py` | queue, quota, storage, GPU failure, owner isolation |
 | `tests/test_image_api.py` | bot auth, character/image routes, gallery |
 | `tests/test_telegram_bot.py` | command parsing and user-facing formatting |
+| `tests/test_image_tools.py` | admin formatting and benchmark configs |
 
 Add the regression test in the cheapest layer that can catch it.
 

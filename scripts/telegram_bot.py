@@ -175,14 +175,22 @@ class Backend:
     def clear_character(self, owner_id: int) -> dict:
         return self._request("DELETE", owner_id, "/api/characters/active")
 
-    def create_image(self, owner_id: int, prompt: str) -> dict:
-        return self._request("POST", owner_id, "/api/images", {"prompt": prompt})
+    def create_image(self, owner_id: int, prompt: str, **options) -> dict:
+        payload = {"prompt": prompt}
+        payload.update({key: value for key, value in options.items() if value is not None})
+        return self._request("POST", owner_id, "/api/images", payload)
 
     def get_image(self, owner_id: int, job_id: str) -> dict:
         return self._request("GET", owner_id, f"/api/images/{job_id}")
 
     def list_images(self, owner_id: int) -> list[dict]:
         return self._request("GET", owner_id, "/api/images")
+
+    def health(self) -> dict:
+        return self._request("GET", 0, "/api/health")
+
+    def active_character(self, owner_id: int) -> dict:
+        return self._request("GET", owner_id, "/api/characters/active")
 
 
 def describe_characters(characters: list[dict]) -> str:
