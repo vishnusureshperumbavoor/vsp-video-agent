@@ -19,7 +19,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from server.api import register_image_app
+from server.config import METADATA_FILE, UPLOADS_DIR, VIDEOS_DIR
 from server.gpu import REMOTE_UPLOADS, GPUError, internal_gpu_client
+from server.runtime import image_lifespan
 from server.wan_worker import (
     REMOTE_JOB_DIR,
     generate_cache_cleanup_code,
@@ -28,18 +31,11 @@ from server.wan_worker import (
     generate_t2v_script,
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-VIDEOS_DIR = BASE_DIR / "public" / "videos"
-UPLOADS_DIR = BASE_DIR / "public" / "uploads"
-METADATA_FILE = VIDEOS_DIR / "metadata.json"
-
-VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-
 app = FastAPI(
     title="VSP Video Agent API",
     description="Wan 2.1 video generation on a JarvisLabs A100",
     version="2.0.0",
+    lifespan=image_lifespan,
 )
 
 app.add_middleware(
@@ -52,6 +48,7 @@ app.add_middleware(
 
 app.mount("/videos", StaticFiles(directory=str(VIDEOS_DIR)), name="videos")
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+register_image_app(app)
 
 jobs: dict[str, dict[str, Any]] = {}
 

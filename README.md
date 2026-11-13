@@ -218,6 +218,100 @@ Options that need no server at all:
 
 ---
 
+## Girlfriend image app (Telegram beta)
+
+The image product is a three-tier stack: **Telegram bot → FastAPI backend →
+GPU image service**. The bot and the GPU are never public; the backend is the
+only surface that holds the shared secrets.
+
+```
+Telegram user
+   │  /imagine a rooftop at sunset
+   ▼
+scripts/telegram_bot.py        (long polling, no inbound port)
+   │  X-Telegram-Id + X-Bot-Token
+   ▼
+FastAPI backend                (auth, quota, SQLite, queue, files)
+   │  Bearer IMAGE_API_TOKEN
+   ▼
+scripts/image_server.py        (warm diffusers pipeline, :6006)
+```
+
+### Run it locally
+
+```bash
+cp .env.example .env
+# fill BOT_INTERNAL_TOKEN, TELEGRAM_BOT_TOKEN and IMAGE_API_TOKEN
+./backend_start.sh
+python scripts/telegram_bot.py
+```
+
+Create a character in the bot, then generate:
+
+```text
+/character Ava | silver hair, green eyes, 25 years old, cinematic portrait
+/imagine a rooftop at sunset
+```
+
+The backend stores jobs in `data/girlfriend.db`, writes PNGs to
+`public/images/<telegram-id>/` and serves them at `/images/...`. Set
+`PUBLIC_BASE_URL` to the backend's public origin so Telegram can fetch the
+photo, and set `DAILY_IMAGE_LIMIT` as the per-user cap (`0` disables it).
+
+Run the backend as **one process** (`uvicorn` default). The queue and the SQLite
+writer are per-process; scaling to several API instances needs Postgres and a
+shared queue first.
+
+### Deploy the GPU service
+
+The service is a normal JarvisLabs GPU container; there is no serverless path
+for a diffusers pipeline.
+
+```bash
+jl filesystem create --name img-models --storage 200 --region IN2 --yes
+jl scripts add scripts/image_startup.sh --name image-service
+jl create --gpu A100 --template pytorch --name img-service \
+  --storage 100 --fs-id <fs_id> --script-id <script_id> \
+  --http-ports "6006" --yes --json
+jl get <machine_id> --json     # endpoints[0] and ssh_command
+jl upload <machine_id> scripts/image_server.py /home/app/image_server.py
+# create /home/app/env (mode 600) with IMAGE_MODEL_ID, IMAGE_API_TOKEN, etc.
+```
+
+Point the backend at the endpoint:
+
+```bash
+IMAGE_API_URL=https://<endpoint>
+IMAGE_API_TOKEN=<the same value as /home/app/env>
+```
+
+Pause the instance when idle (`jl pause <id>`) and resume it before a demo
+(`jl resume <id>`). A failed job reports that the GPU is offline instead of
+hanging, so the bot can tell the user to retry.
+
+Model defaults are env-driven: `IMAGE_MODEL_ID` plus an optional
+`IMAGE_CUSTOM_PIPELINE` (needed for MOSS-Image's `pipeline_moss_image`).
+Leave `IMAGE_CUSTOM_PIPELINE` empty for a plain diffusers repo such as
+`black-forest-labs/FLUX.1-schnell`. Set `IMAGE_DEFAULT_STEPS=50` for MOSS and
+`4` for FLUX.1-schnell; the bot uses this value when it queues a job.
+
+### Image endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/characters` | Create a character bible entry |
+| `GET` | `/api/characters` | List this user's characters |
+| `GET` | `/api/characters/active` | The selected character |
+| `POST` | `/api/characters/{id}/select` | Choose who to draw |
+| `POST` | `/api/images` | Queue a generation |
+| `GET` | `/api/images` | Recent jobs for this user |
+| `GET` | `/api/images/{job_id}` | Status, error and image URL |
+
+All routes require `X-Telegram-Id` and `X-Bot-Token`; only the bot should hold
+the token. The GPU endpoint requires its own `IMAGE_API_TOKEN`.
+
+---
+
 ## REST API
 
 | Method | Endpoint | Description |
@@ -267,11 +361,20 @@ transport method belongs to.
 ```
 vsp-video-agent/
 ├── server/
-│   ├── main.py              # FastAPI orchestrator
+│   ├── main.py              # FastAPI wiring
+│   ├── api/                 # characters, images, video routers
+│   ├── domain/              # character bible + job state machine
+│   ├── services/            # queue, quota, job lifecycle
+│   ├── transport/           # HTTP adapter to the GPU image service
+│   ├── store.py             # SQLite repository
+│   ├── storage.py           # local image storage (R2/S3 seam)
 │   ├── gpu.py               # JarvisLabs SSH transport (async adapter)
 │   ├── wan_worker.py        # Wan 2.1 execution payloads
 │   └── jarvis/              # Vendored JarvisLabs harness
 ├── scripts/
+│   ├── image_server.py          # GPU-side diffusers HTTP service
+│   ├── image_startup.sh         # JarvisLabs container startup script
+│   ├── telegram_bot.py          # bot front door
 │   ├── wan_animate_runner.py    # Provision → render → download → destroy
 │   ├── wan_animate_workflow.json
 │   ├── wan_animate_remote.py
@@ -283,9 +386,10 @@ vsp-video-agent/
 │   └── clone_detection.py   # near-duplicate (renamed copy) detector
 ├── public/
 │   ├── videos/              # Generated MP4s + metadata.json
-│   ├── images/              # Generated MOSS-Image PNGs
+│   ├── images/              # Generated images, served at /images
 │   └── uploads/             # Reference images and driving clips
-├── tests/                   # FakeGPU + payload, lifecycle, API, contract tests
+├── data/                    # SQLite database (git-ignored)
+├── tests/                   # FakeGPU/FakeImageAPI + domain, service, API tests
 ├── quality/budgets.json     # Size ratchet and frozen-vendor checksums
 ├── cli.py                   # Agent/developer CLI
 ├── backend_start.sh

@@ -119,3 +119,37 @@ class FakeGPU:
         self.spawned.clear()
         shutil.rmtree(self.root, ignore_errors=True)
         self.root.mkdir(parents=True, exist_ok=True)
+
+
+class FakeImageAPI:
+    """Deterministic stand-in for ``server.transport.image_api.ImageAPIClient``.
+
+    The real client calls a paid GPU. Keep the signature in sync with it so the
+    service tests keep covering prompt, size, steps, seed and negative prompt.
+    """
+
+    def __init__(self, payload: bytes = b"\x89PNG\r\n\x1a\nfake", error=None) -> None:
+        self.payload = payload
+        self.error = error
+        self.calls: list[dict] = []
+
+    def generate(
+        self,
+        prompt: str,
+        size: int,
+        steps: int,
+        seed: int,
+        negative_prompt: str = "",
+    ) -> bytes:
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "size": size,
+                "steps": steps,
+                "seed": seed,
+                "negative_prompt": negative_prompt,
+            }
+        )
+        if self.error is not None:
+            raise self.error
+        return self.payload

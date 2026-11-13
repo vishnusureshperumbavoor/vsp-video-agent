@@ -9,8 +9,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from fastapi.routing import APIRoute
-
 from server.main import app
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,9 +16,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # Adding or removing an endpoint is a contract change: update this list in the
 # same commit and say why in the message.
 EXPECTED_ROUTES = [
+    "/api/characters",
+    "/api/characters/active",
+    "/api/characters/{character_id}/select",
     "/api/gpu/setup",
     "/api/gpu/status",
     "/api/health",
+    "/api/images",
+    "/api/images/{job_id}",
     "/api/video/clean-cache",
     "/api/video/gallery",
     "/api/video/generate/i2v",
@@ -46,9 +49,8 @@ def _tracked_files() -> list[Path]:
 
 
 def test_route_set_is_stable() -> None:
-    actual = sorted(
-        route.path for route in app.routes if isinstance(route, APIRoute)
-    )
+    # OpenAPI is the public contract; it also sees routers included by features.
+    actual = sorted(app.openapi()["paths"])
     assert actual == EXPECTED_ROUTES, (
         "The HTTP contract changed. If that is intentional, update EXPECTED_ROUTES "
         "in tests/test_contracts.py and explain the change in the commit message."
