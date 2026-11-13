@@ -79,8 +79,13 @@ def http_json(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")[:300]
-        raise BotError(f"{label} rejected the request (HTTP {exc.code}). {detail}") from exc
+        body = exc.read().decode("utf-8", errors="ignore")
+        try:
+            detail = json.loads(body).get("detail", body)
+        except (ValueError, AttributeError):
+            detail = body
+        message = str(detail).strip()[:300] or f"{label} failed (HTTP {exc.code})."
+        raise BotError(message) from exc
     except urllib.error.URLError as exc:
         raise BotError(f"{label} is unreachable.") from exc
 

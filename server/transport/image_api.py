@@ -52,6 +52,10 @@ class ImageAPIClient:
 
         if response.status_code == 401:
             raise ImageAPIError("GPU image service rejected IMAGE_API_TOKEN.")
+        if response.status_code in {404, 502, 503, 504}:
+            raise ImageAPIError(
+                "GPU image service is offline. Resume the instance and retry."
+            )
         if not response.ok:
             raise ImageAPIError(
                 f"GPU image service failed with HTTP {response.status_code}."

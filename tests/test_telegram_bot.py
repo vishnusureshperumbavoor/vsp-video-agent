@@ -6,7 +6,9 @@ user-facing formatting. Network calls stay out of the suite.
 
 from __future__ import annotations
 
+import io
 import sys
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -14,9 +16,11 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import telegram_bot  # noqa: E402
 from telegram_bot import (  # noqa: E402
     BotError,
     describe_characters,
+    http_json,
     is_allowed,
     parse_character,
     parse_command,
@@ -73,3 +77,19 @@ def test_allowlist_accepts_the_configured_user_in_a_group() -> None:
 
 def test_allowlist_rejects_other_chats() -> None:
     assert is_allowed(111, 222, 855227717) is False
+
+
+def test_backend_detail_is_shown_without_http_noise(monkeypatch) -> None:
+    def boom(request, timeout=0):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            404,
+            "Not Found",
+            {},
+            io.BytesIO(b'{"detail":"create and select a character first"}'),
+        )
+
+    monkeypatch.setattr(telegram_bot.urllib.request, "urlopen", boom)
+
+    with pytest.raises(BotError, match="create and select a character first"):
+        http_json("Backend", "http://backend.test/api/images", {})
