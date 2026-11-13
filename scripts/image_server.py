@@ -30,6 +30,8 @@ MODEL_ID = os.environ.get("IMAGE_MODEL_ID", "")
 CUSTOM_PIPELINE = os.environ.get("IMAGE_CUSTOM_PIPELINE", "")
 API_TOKEN = os.environ.get("IMAGE_API_TOKEN", "")
 NO_OFFLOAD = os.environ.get("IMAGE_NO_OFFLOAD", "") == "1"
+LORA_DIR = os.environ.get("IMAGE_LORA_DIR", "")
+LORA_SCALE = float(os.environ.get("IMAGE_LORA_SCALE", "0.8"))
 SKIP_LAYERS = [
     int(value)
     for value in os.environ.get("IMAGE_SKIP_LAYERS", "22").split(",")
@@ -38,6 +40,54 @@ SKIP_LAYERS = [
 
 pipe = None
 lock = asyncio.Lock()
+
+
+def _apply_lora(pipeline, lora_dir: str, scale: float) -> int:
+    """Wrap the transformer's linear layers with the adapter's low-rank deltas."""
+    import torch
+    from safetensors.torch import load_file
+    from torch import nn
+
+    weights = load_file(f"{lora_dir}/pytorch_lora_weights.safetensors")
+
+    class LoRALinear(nn.Module):
+        def __init__(self, base: nn.Linear, a: torch.Tensor, b: torch.Tensor) -> None:
+            super().__init__()
+            self.base = base
+            self.lora_A = nn.Parameter(a.to(dtype=base.weight.dtype))
+            self.lora_B = nn.Parameter(b.to(dtype=base.weight.dtype))
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            update = x @ self.lora_A.t() @ self.lora_B.t()
+            return self.base(x) + update * scale
+
+        @property
+        def weight(self) -> torch.Tensor:
+            return self.base.weight
+
+        @property
+        def bias(self):
+            return self.base.bias
+
+    applied = 0
+
+    def walk(module: nn.Module, prefix: str) -> None:
+        nonlocal applied
+        for name, child in list(module.named_children()):
+            full = f"{prefix}.{name}" if prefix else name
+            a_key = f"transformer.{full}.lora_A.weight"
+            b_key = f"transformer.{full}.lora_B.weight"
+            if isinstance(child, nn.Linear) and a_key in weights and b_key in weights:
+                setattr(module, name, LoRALinear(child, weights[a_key], weights[b_key]))
+                applied += 1
+            else:
+                walk(child, full)
+
+    walk(pipeline.transformer, "")
+    expected = sum(1 for key in weights if key.endswith(".lora_A.weight"))
+    if applied != expected:
+        raise RuntimeError(f"LoRA applied to {applied} of {expected} tensors")
+    return applied
 
 
 def load_pipeline():
@@ -54,6 +104,9 @@ def load_pipeline():
     if CUSTOM_PIPELINE:
         options.update(custom_pipeline=CUSTOM_PIPELINE, trust_remote_code=True)
     pipeline = DiffusionPipeline.from_pretrained(MODEL_ID, **options)
+    if LORA_DIR and LORA_SCALE > 0:
+        applied = _apply_lora(pipeline, LORA_DIR, LORA_SCALE)
+        print(f"=== LORA_READY: {applied} layers @ {LORA_SCALE}", flush=True)
     if NO_OFFLOAD:
         pipeline.to("cuda")
     else:

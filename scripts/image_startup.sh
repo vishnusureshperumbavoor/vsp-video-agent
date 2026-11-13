@@ -23,7 +23,10 @@ fi
 if [ ! -x /home/venv/bin/uvicorn ]; then
   python3 -m venv --system-site-packages /home/venv
   /home/venv/bin/pip install -q diffusers transformers accelerate \
-    safetensors fastapi uvicorn pillow
+    safetensors peft fastapi uvicorn pillow
+fi
+if ! /home/venv/bin/python -c "import peft" 2>/dev/null; then
+  /home/venv/bin/pip install -q peft
 fi
 
 if ! curl -fsS http://127.0.0.1:6006/health >/dev/null 2>&1; then

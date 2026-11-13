@@ -272,9 +272,10 @@ GLOBAL_DAILY_LIMIT=100       # hard cap across all users
 ```
 
 Your own `/imagine` still uses your selected character; a public user has no
-character, so they get plain prompt-to-image. `/last` resends the newest
-picture, which also recovers deliveries lost when the bot restarts. Each photo
-caption includes the render time (`⏱ 63.4s`); `/status` shows it too.
+character, so they get plain prompt-to-image. Send `/prompt` to stop using your
+character for a while, and `/select <id>` to bring it back. `/last` resends the
+newest picture, which also recovers deliveries lost when the bot restarts. Each
+photo caption includes the render time (`⏱ 63.4s`); `/status` shows it too.
 
 Run the backend as **one process** (`uvicorn` default). The queue and the SQLite
 writer are per-process; scaling to several API instances needs Postgres and a
@@ -312,6 +313,20 @@ Model defaults are env-driven: `IMAGE_MODEL_ID` plus an optional
 Leave `IMAGE_CUSTOM_PIPELINE` empty for a plain diffusers repo such as
 `black-forest-labs/FLUX.1-schnell`. Set `IMAGE_DEFAULT_STEPS=50` for MOSS and
 `4` for FLUX.1-schnell; the bot uses this value when it queues a job.
+
+### Optional LoRA adapter
+
+`scripts/image_server.py` can wrap the MOSS transformer with a LoRA adapter:
+
+```bash
+IMAGE_LORA_DIR=/home/jl_fs/lora/moss   # directory with pytorch_lora_weights.safetensors
+IMAGE_LORA_SCALE=0.5                   # 0 disables, 1.0 is full strength
+```
+
+The MOSS pipeline does not expose `load_lora_weights`, so the server applies the
+adapter directly to the transformer's linear layers. Only the adapter file is
+needed (~70 MB); never download the repo's merged model. Any adapter used here
+is adult content: 18+ only, and no real person's likeness without consent.
 
 ### Image endpoints
 
