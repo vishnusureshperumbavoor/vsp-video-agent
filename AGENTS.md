@@ -47,6 +47,9 @@ at the wrong layer — use `tests/fakes.py` instead.
 | Speed benchmark | `scripts/image_bench.py` | the backend |
 | Reference-edit CLI | `scripts/reference_edit.py` | the Telegram flow |
 | Character bootstrap CLI | `scripts/character_cli.py` + `scripts/character/` | `server/` |
+| Video operator CLI | `scripts/video_admin.py` | `server/` |
+| Video HTTP client | `scripts/video_client.py` | a router |
+| Video runbook | `docs/video-generation.md` | a model class |
 | Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
 
 `server/main.py` is **wiring only**. It is already at its cap: if you need a new
@@ -100,6 +103,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_telegram_bot.py` | command parsing and user-facing formatting |
 | `tests/test_image_tools.py` | admin formatting and benchmark configs |
 | `tests/test_character_tools.py` | bootstrap scenes, captions, curation math, train command |
+| `tests/test_video_tools.py` | video payloads, CLI parsing, job formatting |
 
 Add the regression test in the cheapest layer that can catch it.
 
@@ -138,6 +142,21 @@ Add the regression test in the cheapest layer that can catch it.
 and image product). `server/domain/` is pure Python: the character bible and the
 image job state machine. `server/services/` owns the queue and quota. Do not
 grow `server/main.py`; add a router and register it from `server/api/__init__.py`.
+
+## 🎞️ Video generation
+
+Any agent can drive the video pipeline through `scripts/video_admin.py`; the
+full pre-flight, model choices, timings and pitfalls are in
+`docs/video-generation.md`. No OpenCode-specific skill is required.
+
+```bash
+python scripts/video_admin.py doctor
+python scripts/video_admin.py t2v "a beach at sunset"
+python scripts/video_admin.py i2v face.png "she smiles at the camera"
+```
+
+1.3B is the draft model. Use I2V from an approved character still for identity,
+or Wan Animate for motion transfer. Never expose SSH or ComfyUI publicly.
 
 ---
 

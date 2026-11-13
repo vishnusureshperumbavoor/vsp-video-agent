@@ -414,6 +414,25 @@ python scripts/image_bench.py --sizes 1024,768 --steps 50,30
 Both tools read `.env`, so `BOT_INTERNAL_TOKEN`, `TELEGRAM_OWNER_ID`,
 `IMAGE_API_URL` and `IMAGE_API_TOKEN` come from the same place as the bot.
 
+### Video operator CLI
+
+`scripts/video_admin.py` speaks HTTP to the FastAPI backend and works from any
+agent or terminal. The full runbook is in `docs/video-generation.md`.
+
+```bash
+python scripts/video_admin.py doctor
+python scripts/video_admin.py t2v "a beach at sunset"
+python scripts/video_admin.py t2v "a beach at sunset" --model 14B --duration 5
+python scripts/video_admin.py i2v face.png "she smiles and turns to the camera"
+python scripts/video_admin.py jobs
+python scripts/video_admin.py status <job_id>
+python scripts/video_admin.py send <filename>
+python scripts/video_admin.py clean-cache
+```
+
+`t2v` defaults to 1.3B, 3s, 25 steps, 16:9. `i2v` defaults to 5s, 9:16. Both
+wait for completion and print GPU/total time; add `--no-wait` to just queue.
+
 ---
 
 ## REST API
@@ -481,6 +500,9 @@ vsp-video-agent/
 │   ├── telegram_bot.py          # bot front door
 │   ├── image_admin.py           # operator CLI for the backend
 │   ├── image_bench.py           # speed benchmark
+│   ├── video_admin.py           # video T2V/I2V operator CLI
+│   ├── video_client.py          # video API HTTP client
+│   ├── video_jobs.py            # video captions, timing and quota helpers
 │   ├── reference_edit.py        # reference-conditioned edit CLI
 │   ├── character_cli.py         # synthetic bootstrap: sheet, curate, caption, train
 │   ├── character/               # scene list, sheet, curation, training command
@@ -499,6 +521,8 @@ vsp-video-agent/
 │   ├── images/              # Generated images, served at /images
 │   └── uploads/             # Reference images and driving clips
 ├── data/                    # SQLite database (git-ignored)
+├── docs/
+│   └── video-generation.md  # agent-agnostic video runbook
 ├── tests/                   # FakeGPU/FakeImageAPI + domain, service, API tests
 ├── quality/budgets.json     # Size ratchet and frozen-vendor checksums
 ├── cli.py                   # Agent/developer CLI
