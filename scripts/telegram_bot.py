@@ -23,12 +23,14 @@ import urllib.request
 from pathlib import Path
 
 import requests
+from video_jobs import VIDEO_POLL_SECONDS, allow_video, format_video_caption
 
 MAX_INFLIGHT = 4
 POLL_SECONDS = 600
 HELP = (
     "Send me a scene and I will make a picture.\n\n"
     "/imagine a rooftop at sunset — generate\n"
+    "/video a cinematic beach at sunset — 3s clip\n"
     "/last — resend the newest picture\n"
     "/status — recent pictures\n\n"
     "Optional character mode:\n"
@@ -40,6 +42,7 @@ HELP = (
 PUBLIC_HELP = (
     "Send /imagine <scene> and I will make a picture.\n\n"
     "Example: /imagine a lighthouse at dusk, 35mm photo\n"
+    "/video a cinematic beach at sunset — 3s clip\n"
     "/last — resend the newest picture\n"
     "/status — recent pictures"
 )
@@ -199,6 +202,28 @@ class Backend:
     def list_images(self, owner_id: int) -> list[dict]:
         return self._request("GET", owner_id, "/api/images")
 
+    def create_video(
+        self,
+        prompt: str,
+        duration: int = 3,
+        steps: int = 25,
+        model_size: str = "1.3B",
+        aspect_ratio: str = "16:9",
+    ) -> dict:
+        payload = {
+            "prompt": prompt,
+            "duration": duration,
+            "steps": steps,
+            "model_size": model_size,
+            "aspect_ratio": aspect_ratio,
+        }
+        return http_json("Backend", f"{self.base_url}/api/video/generate/t2v", payload)
+
+    def get_video(self, job_id: str) -> dict:
+        return http_json(
+            "Backend", f"{self.base_url}/api/video/jobs/{job_id}", method="GET"
+        )
+
     def health(self) -> dict:
         return self._request("GET", 0, "/api/health")
 
@@ -226,25 +251,59 @@ def format_caption(job: dict, limit: int = 900) -> str:
     return f"{prompt}\n⏱ {seconds:.1f}s"
 
 
-def wait_for_image(backend: Backend, owner_id: int, job_id: str) -> dict:
-    deadline = time.time() + POLL_SECONDS
+def _poll_job(fetch, job_id: str, timeout: int, timeout_message: str) -> dict:
+    deadline = time.time() + timeout
     while time.time() < deadline:
-        job = backend.get_image(owner_id, job_id)
+        job = fetch(job_id)
         if job.get("status") == "completed":
             return job
         if job.get("status") == "failed":
             raise BotError(job.get("error") or "Generation failed.")
         time.sleep(2)
-    raise BotError("Timed out waiting for the GPU. Try again once it is resumed.")
+    raise BotError(timeout_message)
 
 
-def fetch_image(url: str) -> bytes:
+def wait_for_image(backend: Backend, owner_id: int, job_id: str) -> dict:
+    return _poll_job(
+        lambda job: backend.get_image(owner_id, job),
+        job_id,
+        POLL_SECONDS,
+        "Timed out waiting for the GPU. Try again once it is resumed.",
+    )
+
+
+def wait_for_video(backend: Backend, job_id: str) -> dict:
+    return _poll_job(backend.get_video, job_id, VIDEO_POLL_SECONDS, "Timed out waiting for the video.")
+
+
+def fetch_bytes(url: str, label: str) -> bytes:
     try:
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=60)
         response.raise_for_status()
         return response.content
     except requests.RequestException as exc:
-        raise BotError("Could not fetch the generated image.") from exc
+        raise BotError(f"Could not fetch the generated {label}.") from exc
+
+
+def fetch_image(url: str) -> bytes:
+    return fetch_bytes(url, "image")
+
+
+def fetch_video(url: str) -> bytes:
+    return fetch_bytes(url, "video")
+
+
+def deliver_video(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, job_id: str) -> None:
+    started = time.time()
+    try:
+        job = wait_for_video(backend, job_id)
+        url = job.get("video_url") or ""
+        if url.startswith("/"):
+            url = f"{backend.base_url}{url}"
+        caption = format_video_caption(job, time.time() - started)
+        bot.send_video(chat_id, fetch_video(url), caption)
+    except BotError as exc:
+        bot.send_message(chat_id, str(exc))
 
 
 def deliver(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, job_id: str) -> None:
@@ -258,10 +317,14 @@ def deliver(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, job_id
         bot.send_message(chat_id, str(exc))
 
 
+def _reply(chat_id: int, text: str) -> tuple[int, str, None, None]:
+    return chat_id, text, None, None
+
+
 def handle_message(
     backend: Backend, update: dict, character_owner: int = 0
-) -> tuple[int, str, str | None] | None:
-    """Return (chat_id, reply, job_id). job_id is set only for /imagine."""
+) -> tuple[int, str, str | None, str | None] | None:
+    """Return (chat_id, reply, job_id, kind), where kind is image or video."""
     message = update.get("message") or {}
     chat_id = (message.get("chat") or {}).get("id")
     owner_id = (message.get("from") or {}).get("id")
@@ -271,50 +334,67 @@ def handle_message(
     command, argument = parse_command(text)
     if command in ("", "start", "help"):
         help_text = HELP if character_commands_allowed(owner_id, character_owner) else PUBLIC_HELP
-        return chat_id, help_text, None
+        return _reply(chat_id, help_text)
     if command in ("character", "characters", "select", "prompt") and not character_commands_allowed(
         owner_id, character_owner
     ):
-        return chat_id, "Characters are private. Use /imagine <scene> for a picture.", None
+        return _reply(chat_id, "Characters are private. Use /imagine <scene> for a picture.")
     if command in ("prompt", "nocharacter"):
         backend.clear_character(owner_id)
-        return chat_id, "Prompt mode enabled. /imagine uses your text only. Use /select <id> to bring a character back.", None
+        return _reply(
+            chat_id,
+            "Prompt mode enabled. /imagine uses your text only. "
+            "Use /select <id> to bring a character back.",
+        )
     if command == "character":
         name, appearance = parse_character(argument)
         character = backend.create_character(owner_id, name, appearance)
         backend.select_character(owner_id, character["id"])
-        return chat_id, f"Created {character['name']}. Send /imagine <scene>.", None
+        return _reply(chat_id, f"Created {character['name']}. Send /imagine <scene>.")
     if command == "characters":
-        return chat_id, describe_characters(backend.list_characters(owner_id)), None
+        return _reply(chat_id, describe_characters(backend.list_characters(owner_id)))
     if command == "select":
         if not argument:
             raise BotError("Use: /select <id>")
         character = backend.select_character(owner_id, argument)
-        return chat_id, f"Now drawing {character['name']}.", None
+        return _reply(chat_id, f"Now drawing {character['name']}.")
     if command == "imagine":
         if not argument:
             raise BotError("Use: /imagine a rooftop at sunset")
         job = backend.create_image(owner_id, argument)
-        return chat_id, "Queued. I will send it when it is ready.", job["id"]
+        return chat_id, "Queued. I will send it when it is ready.", job["id"], "image"
+    if command == "video":
+        if not argument:
+            raise BotError("Use: /video a cinematic beach at sunset")
+        limit = int(os.environ.get("VIDEO_DAILY_LIMIT", "3"))
+        if not allow_video(owner_id, limit):
+            return _reply(chat_id, f"Daily video limit ({limit}) reached.")
+        job = backend.create_video(
+            argument,
+            duration=int(os.environ.get("VIDEO_DURATION", "3")),
+            steps=int(os.environ.get("VIDEO_STEPS", "25")),
+            model_size=os.environ.get("VIDEO_MODEL_SIZE", "1.3B"),
+        )
+        return chat_id, "Queued. I will send the clip when it is ready.", job["job_id"], "video"
     if command == "last":
         completed = next(
             (job for job in backend.list_images(owner_id) if job.get("status") == "completed"),
             None,
         )
         if completed is None:
-            return chat_id, "No finished pictures yet.", None
-        return chat_id, "Here is your latest picture.", completed["id"]
+            return _reply(chat_id, "No finished pictures yet.")
+        return chat_id, "Here is your latest picture.", completed["id"], "image"
     if command == "status":
         jobs = backend.list_images(owner_id)[:5]
         if not jobs:
-            return chat_id, "No pictures yet.", None
+            return _reply(chat_id, "No pictures yet.")
         lines = []
         for item in jobs:
             seconds = item.get("generation_seconds")
             timing = f" ({seconds:.0f}s)" if seconds is not None else ""
             lines.append(f"{item['status']}: {item['prompt'][:60]}{timing}")
-        return chat_id, "\n".join(lines), None
-    return chat_id, PUBLIC_HELP, None
+        return _reply(chat_id, "\n".join(lines))
+    return _reply(chat_id, PUBLIC_HELP)
 
 
 def main() -> int:
@@ -351,11 +431,16 @@ def main() -> int:
                 result = handle_message(backend, update, character_owner)
                 if result is None:
                     continue
-                result_chat, reply, job_id = result
+                result_chat, reply, job_id, kind = result
                 if job_id and owner_id:
                     inflight.acquire()
+                    target = (
+                        _deliver_video_and_release
+                        if kind == "video"
+                        else _deliver_and_release
+                    )
                     threading.Thread(
-                        target=_deliver_and_release,
+                        target=target,
                         args=(inflight, bot, backend, result_chat, owner_id, job_id),
                         daemon=True,
                     ).start()
@@ -379,6 +464,13 @@ def main() -> int:
 def _deliver_and_release(semaphore, bot, backend, chat_id, owner_id, job_id) -> None:
     try:
         deliver(bot, backend, chat_id, owner_id, job_id)
+    finally:
+        semaphore.release()
+
+
+def _deliver_video_and_release(semaphore, bot, backend, chat_id, owner_id, job_id) -> None:
+    try:
+        deliver_video(bot, backend, chat_id, owner_id, job_id)
     finally:
         semaphore.release()
 

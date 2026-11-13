@@ -251,6 +251,7 @@ Create a character in the bot, then generate:
 ```text
 /character Ava | silver hair, green eyes, 25 years old, cinematic portrait
 /imagine a rooftop at sunset
+/video a cinematic beach at sunset
 ```
 
 The backend stores jobs in `data/girlfriend.db`, writes PNGs to

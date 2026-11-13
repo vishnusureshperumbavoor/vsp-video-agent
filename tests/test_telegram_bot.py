@@ -27,6 +27,7 @@ from telegram_bot import (  # noqa: E402
     parse_character,
     parse_command,
 )
+from video_jobs import extract_video_seconds, format_video_caption  # noqa: E402
 
 
 def test_plain_text_is_not_a_command() -> None:
@@ -129,3 +130,28 @@ def test_network_timeout_is_wrapped_as_a_bot_error(monkeypatch) -> None:
 
     with pytest.raises(BotError, match="unreachable"):
         http_json("Telegram", "http://telegram.test/getUpdates", {})
+
+
+def test_extract_video_seconds_reads_the_success_marker() -> None:
+    logs = ["Loading...", "=== JOB_SUCCESS: out.mp4 generated in 58.7s (273000 bytes) ==="]
+
+    assert extract_video_seconds(logs) == 58.7
+
+
+def test_extract_video_seconds_handles_missing_marker() -> None:
+    assert extract_video_seconds(["still running"]) is None
+
+
+def test_video_caption_includes_model_and_timing() -> None:
+    job = {
+        "prompt": "a beach at sunset",
+        "logs": ["=== JOB_SUCCESS: out.mp4 generated in 58.7s (273000 bytes) ==="],
+        "metadata": {"model_size": "1.3B", "duration": 3},
+    }
+
+    caption = format_video_caption(job, total_seconds=80)
+
+    assert "a beach at sunset" in caption
+    assert "Wan 2.1 1.3B" in caption
+    assert "58.7s GPU" in caption
+    assert "80s total" in caption
