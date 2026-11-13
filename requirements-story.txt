@@ -1,0 +1,5 @@
+# Micro-story Level 1: CPU TTS + local FFmpeg assembly.
+piper-tts>=1.2
+numpy>=1.26
+huggingface_hub>=0.30
+requests>=2.28

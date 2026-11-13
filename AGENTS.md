@@ -50,6 +50,8 @@ at the wrong layer — use `tests/fakes.py` instead.
 | Video operator CLI | `scripts/video_admin.py` | `server/` |
 | Video HTTP client | `scripts/video_client.py` | a router |
 | Video runbook | `docs/video-generation.md` | a model class |
+| Micro-story CLI | `scripts/story_video.py` | `server/` |
+| Story planning/rendering | `scripts/story/` | a router |
 | Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
 
 `server/main.py` is **wiring only**. It is already at its cap: if you need a new
@@ -104,6 +106,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_image_tools.py` | admin formatting and benchmark configs |
 | `tests/test_character_tools.py` | bootstrap scenes, captions, curation math, train command |
 | `tests/test_video_tools.py` | video payloads, CLI parsing, job formatting |
+| `tests/test_story_tools.py` | story parsing, prompts, SRT timing |
 
 Add the regression test in the cheapest layer that can catch it.
 
@@ -157,6 +160,18 @@ python scripts/video_admin.py i2v face.png "she smiles at the camera"
 
 1.3B is the draft model. Use I2V from an approved character still for identity,
 or Wan Animate for motion transfer. Never expose SSH or ComfyUI publicly.
+
+## 🎬 Micro-story videos (Level 1)
+
+`scripts/story_video.py` turns a JSON storyboard + one character reference into
+a 9:16 MP4 with Piper narration, an ambient bed and burned captions. The
+agent-agnostic runbook is `docs/microstory-video.md`; the renderer is never run
+in CI, so always start with `--dry-run`.
+
+```bash
+python scripts/story_video.py plan --script story.json
+python scripts/story_video.py render --script story.json --reference face.png --dry-run
+```
 
 ---
 

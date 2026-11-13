@@ -72,3 +72,10 @@ def test_reference_payload_carries_the_edit_settings() -> None:
     assert payload["height"] == 768
     assert payload["steps"] == 4
     assert payload["guidance_scale"] == 1.0
+
+
+def test_reference_payload_can_be_vertical() -> None:
+    payload = build_edit_payload("keep the same woman", "ref", size=768, height=1344)
+
+    assert payload["width"] == 768
+    assert payload["height"] == 1344

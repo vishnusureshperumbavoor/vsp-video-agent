@@ -54,6 +54,8 @@ Thumbs.db
 # Remote job logs and intermediate artifacts
 public/jobs/*
 !public/jobs/.gitkeep
+public/stories/*
+!public/stories/.gitkeep
 
 # Local image product database
 data/

@@ -34,12 +34,13 @@ def build_edit_payload(
     steps: int = 4,
     guidance: float = 1.0,
     seed: int = 42,
+    height: int | None = None,
 ) -> dict:
     return {
         "prompt": prompt,
         "reference_b64": reference_b64,
         "width": size,
-        "height": size,
+        "height": height or size,
         "steps": steps,
         "guidance_scale": guidance,
         "seed": seed,

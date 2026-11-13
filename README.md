@@ -433,6 +433,22 @@ python scripts/video_admin.py clean-cache
 `t2v` defaults to 1.3B, 3s, 25 steps, 16:9. `i2v` defaults to 5s, 9:16. Both
 wait for completion and print GPU/total time; add `--no-wait` to just queue.
 
+### Micro-story videos (Level 1)
+
+```bash
+pip install -r requirements-story.txt
+python scripts/story_video.py plan --script story.json
+python scripts/story_video.py render \
+  --script story.json --reference face.png --dry-run
+python scripts/story_video.py render \
+  --script story.json --reference face.png \
+  --out public/videos/story.mp4
+```
+
+It generates one reference-edited still per scene, Piper narration, an ambient
+bed, burned captions, and a 9:16 MP4. The renderer is not run in CI; start with
+`--dry-run`. Full schema and Level 2/3 options: `docs/microstory-video.md`.
+
 ---
 
 ## REST API
@@ -503,6 +519,8 @@ vsp-video-agent/
 │   ├── video_admin.py           # video T2V/I2V operator CLI
 │   ├── video_client.py          # video API HTTP client
 │   ├── video_jobs.py            # video captions, timing and quota helpers
+│   ├── story_video.py           # micro-story Level 1 CLI
+│   ├── story/                   # story parsing, Piper TTS, FFmpeg assembly
 │   ├── reference_edit.py        # reference-conditioned edit CLI
 │   ├── character_cli.py         # synthetic bootstrap: sheet, curate, caption, train
 │   ├── character/               # scene list, sheet, curation, training command
@@ -522,11 +540,13 @@ vsp-video-agent/
 │   └── uploads/             # Reference images and driving clips
 ├── data/                    # SQLite database (git-ignored)
 ├── docs/
-│   └── video-generation.md  # agent-agnostic video runbook
+│   ├── video-generation.md  # agent-agnostic video runbook
+│   └── microstory-video.md  # Level 1 micro-story runbook
 ├── tests/                   # FakeGPU/FakeImageAPI + domain, service, API tests
 ├── quality/budgets.json     # Size ratchet and frozen-vendor checksums
 ├── cli.py                   # Agent/developer CLI
 ├── backend_start.sh
 ├── requirements.txt         # Backend
-└── requirements-jarvis.txt  # Wan Animate runner
+├── requirements-jarvis.txt  # Wan Animate runner
+└── requirements-story.txt   # Micro-story TTS tooling
 ```

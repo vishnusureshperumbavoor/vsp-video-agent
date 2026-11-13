@@ -24,6 +24,7 @@ from character.curate import curate  # noqa: E402
 from character.scenes import load_scenes  # noqa: E402
 from character.sheet import generate_sheet  # noqa: E402
 from character.train import TrainSettings, build_command, write_script  # noqa: E402
+from cli_common import add_options  # noqa: E402
 from gpu_client import GPUError, add_service_args, resolve_service  # noqa: E402
 from telegram_bot import load_dotenv  # noqa: E402
 
@@ -99,11 +100,6 @@ def cmd_train(args) -> int:
     print(shlex.join(command))
     print("\nRun this on the GPU box after installing the training deps and trainer.")
     return 0
-
-
-def add_options(parser: argparse.ArgumentParser, options: list[tuple[str, dict]]) -> None:
-    for flags, kwargs in options:
-        parser.add_argument(flags, **kwargs)
 
 
 def add_identity_options(parser: argparse.ArgumentParser, seed_default: int) -> None:
