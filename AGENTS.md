@@ -46,6 +46,7 @@ at the wrong layer — use `tests/fakes.py` instead.
 | Image operator CLI | `scripts/image_admin.py` | `server/` |
 | Speed benchmark | `scripts/image_bench.py` | the backend |
 | Reference-edit CLI | `scripts/reference_edit.py` | the Telegram flow |
+| Character bootstrap CLI | `scripts/character_cli.py` + `scripts/character/` | `server/` |
 | Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
 
 `server/main.py` is **wiring only**. It is already at its cap: if you need a new
@@ -98,6 +99,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_image_api.py` | bot auth, character/image routes, gallery |
 | `tests/test_telegram_bot.py` | command parsing and user-facing formatting |
 | `tests/test_image_tools.py` | admin formatting and benchmark configs |
+| `tests/test_character_tools.py` | bootstrap scenes, captions, curation math, train command |
 
 Add the regression test in the cheapest layer that can catch it.
 

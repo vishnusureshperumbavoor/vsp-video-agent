@@ -344,6 +344,36 @@ The first call lazily loads FLUX.2 (~13 GB); later edits take about 14 s at
 reference image for identity. This is an operator endpoint, not yet wired into
 the Telegram photo flow.
 
+### Synthetic character bootstrap
+
+The tooling for a stronger, LoRA-based identity is in place, but the sheet and
+training run are deliberately manual because they take GPU hours:
+
+```bash
+# 1. Generate 30 reference edits from one canonical portrait
+python scripts/character_cli.py sheet --reference face.png --out sheet/
+
+# 2. Curate by face embedding (drops no-face, low-identity and duplicates)
+pip install insightface onnxruntime opencv-python-headless
+python scripts/character_cli.py curate \
+  --input sheet/ --reference face.png --out dataset/
+
+# 3. Captions are written by the sheet command; rewrite them if needed
+python scripts/character_cli.py caption --manifest sheet/manifest.json
+
+# 4. Build the FLUX.2 klein LoRA command (no training is started here)
+python scripts/character_cli.py train --dataset dataset/ --dry-run
+python scripts/character_cli.py train --dataset dataset/ \
+  --write-script train_character.sh
+
+# 5. On the GPU box, install the training deps and run the script
+```
+
+The trainer is the official diffusers `train_dreambooth_lora_flux2_klein.py`.
+It uses `--use_8bit_adam`, gradient checkpointing, latent caching and CPU
+offload because FP8 training requires compute capability 8.9+, which the A100
+does not have.
+
 ### Image endpoints
 
 | Method | Endpoint | Description |
@@ -451,6 +481,8 @@ vsp-video-agent/
 │   ├── image_admin.py           # operator CLI for the backend
 │   ├── image_bench.py           # speed benchmark
 │   ├── reference_edit.py        # reference-conditioned edit CLI
+│   ├── character_cli.py         # synthetic bootstrap: sheet, curate, caption, train
+│   ├── character/               # scene list, sheet, curation, training command
 │   ├── gpu_client.py            # shared HTTP client for the tools
 │   ├── wan_animate_runner.py    # Provision → render → download → destroy
 │   ├── wan_animate_workflow.json

@@ -1,0 +1,1 @@
+"""Synthetic character bootstrap helpers."""
