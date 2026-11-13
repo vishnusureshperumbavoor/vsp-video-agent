@@ -101,6 +101,14 @@ class Store:
                 (character_id, owner_id),
             )
 
+    def clear_active_character(self, owner_id: int) -> None:
+        self.ensure_user(owner_id)
+        with self._connection() as conn:
+            conn.execute(
+                "UPDATE users SET active_character_id = NULL WHERE telegram_id = ?",
+                (owner_id,),
+            )
+
     def get_active_character_id(self, owner_id: int) -> str | None:
         with self._connection() as conn:
             row = conn.execute(

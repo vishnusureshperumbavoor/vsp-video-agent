@@ -34,7 +34,8 @@ HELP = (
     "Optional character mode:\n"
     "/character Name | how she looks\n"
     "/characters — list your characters\n"
-    "/select <id> — choose who to draw"
+    "/select <id> — choose who to draw\n"
+    "/prompt — stop using your character"
 )
 PUBLIC_HELP = (
     "Send /imagine <scene> and I will make a picture.\n\n"
@@ -171,6 +172,9 @@ class Backend:
     def select_character(self, owner_id: int, character_id: str) -> dict:
         return self._request("POST", owner_id, f"/api/characters/{character_id}/select")
 
+    def clear_character(self, owner_id: int) -> dict:
+        return self._request("DELETE", owner_id, "/api/characters/active")
+
     def create_image(self, owner_id: int, prompt: str) -> dict:
         return self._request("POST", owner_id, "/api/images", {"prompt": prompt})
 
@@ -247,10 +251,13 @@ def handle_message(
     if command in ("", "start", "help"):
         help_text = HELP if character_commands_allowed(owner_id, character_owner) else PUBLIC_HELP
         return chat_id, help_text, None
-    if command in ("character", "characters", "select") and not character_commands_allowed(
+    if command in ("character", "characters", "select", "prompt") and not character_commands_allowed(
         owner_id, character_owner
     ):
         return chat_id, "Characters are private. Use /imagine <scene> for a picture.", None
+    if command in ("prompt", "nocharacter"):
+        backend.clear_character(owner_id)
+        return chat_id, "Prompt mode enabled. /imagine uses your text only. Use /select <id> to bring a character back.", None
     if command == "character":
         name, appearance = parse_character(argument)
         character = backend.create_character(owner_id, name, appearance)

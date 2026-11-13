@@ -152,6 +152,20 @@ def test_global_daily_cap_stops_runaway_public_use(tmp_path: Path) -> None:
         service.create_job(owner_id=8, scene="second")
 
 
+def test_clear_character_switches_to_prompt_mode(tmp_path: Path) -> None:
+    service, _ = make_service(tmp_path)
+    character_id = ready_character(service)
+
+    with_character = service.create_job(owner_id=7, scene="a cat")
+    assert with_character.character_id == character_id
+
+    service.clear_character(7)
+    prompt_only = service.create_job(owner_id=7, scene="a cat")
+
+    assert prompt_only.character_id == ""
+    assert prompt_only.prompt == "a cat"
+
+
 def test_start_requeues_jobs_left_queued_by_a_restart(tmp_path: Path) -> None:
     service, _ = make_service(tmp_path)
     ready_character(service)

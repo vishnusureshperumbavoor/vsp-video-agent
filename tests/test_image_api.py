@@ -131,6 +131,22 @@ def test_prompt_only_image_needs_no_character(client) -> None:
     assert job["prompt"] == "a cat"
 
 
+def test_clearing_the_character_returns_to_prompt_mode(client) -> None:
+    character = client.post(
+        "/api/characters",
+        headers=auth(),
+        json={"name": "Ava", "appearance": "silver hair"},
+    ).json()
+    client.post(f"/api/characters/{character['id']}/select", headers=auth())
+
+    cleared = client.delete("/api/characters/active", headers=auth())
+    assert cleared.status_code == 200
+    assert client.get("/api/characters/active", headers=auth()).status_code == 404
+
+    job = client.post("/api/images", headers=auth(), json={"prompt": "a cat"}).json()
+    assert job["character_id"] == ""
+
+
 def test_auto_dispatch_finishes_on_the_server_event_loop(auto_client) -> None:
     """Regression: a sync endpoint used to call create_task with no running loop."""
     character = auto_client.post(

@@ -52,6 +52,12 @@ def active_character(owner_id: User, service: Service) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.delete("/active")
+def clear_active_character(owner_id: User, service: Service) -> dict:
+    service.clear_character(owner_id)
+    return {"active": None}
+
+
 @router.post("/{character_id}/select")
 def select_character(character_id: str, owner_id: User, service: Service) -> dict:
     try:

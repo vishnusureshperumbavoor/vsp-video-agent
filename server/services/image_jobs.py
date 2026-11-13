@@ -90,6 +90,10 @@ class ImageJobService:
             raise NotFound("no active character")
         return self.get_character(owner_id, character_id)
 
+    def clear_character(self, owner_id: int) -> None:
+        """Return the user to prompt-only mode without deleting the character."""
+        self._store.clear_active_character(owner_id)
+
     # ------------------------------------------------------------------- jobs
     def create_job(
         self,
