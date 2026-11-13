@@ -147,6 +147,19 @@ class Telegram:
         if not response.ok:
             raise BotError(f"Telegram rejected the photo (HTTP {response.status_code}).")
 
+    def send_video(self, chat_id: int, data: bytes, caption: str) -> None:
+        try:
+            response = requests.post(
+                f"{self._base}/sendVideo",
+                data={"chat_id": chat_id, "caption": caption[:1024]},
+                files={"video": ("clip.mp4", data, "video/mp4")},
+                timeout=180,
+            )
+        except requests.RequestException as exc:
+            raise BotError("Telegram is unreachable.") from exc
+        if not response.ok:
+            raise BotError(f"Telegram rejected the video (HTTP {response.status_code}).")
+
 
 class Backend:
     def __init__(self, base_url: str, token: str) -> None:

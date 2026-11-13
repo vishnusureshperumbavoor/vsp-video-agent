@@ -103,10 +103,7 @@ torch.cuda.empty_cache()
 model_id = "{model_id}"
 print(f"Loading {{model_id}} in bfloat16...", flush=True)
 
-pipe = WanPipeline.from_pretrained(
-    model_id,
-    torch_dtype=torch.bfloat16
-)
+pipe = WanPipeline.from_pretrained(model_id, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True)
 {"pipe.enable_model_cpu_offload()" if use_offload else 'pipe.to("cuda")'}
 
 generator = torch.Generator(device="cuda").manual_seed({seed})
@@ -188,10 +185,7 @@ print(f"Loaded source image, resized to: {{init_image.size}}", flush=True)
 model_id = "{model_id}"
 print(f"Loading cached {{model_id}} in bfloat16 with CPU offload...", flush=True)
 
-pipe = WanImageToVideoPipeline.from_pretrained(
-    model_id,
-    torch_dtype=torch.bfloat16
-)
+pipe = WanImageToVideoPipeline.from_pretrained(model_id, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True)
 pipe.enable_model_cpu_offload()
 
 generator = torch.Generator(device="cuda").manual_seed({seed})
