@@ -273,7 +273,8 @@ GLOBAL_DAILY_LIMIT=100       # hard cap across all users
 
 Your own `/imagine` still uses your selected character; a public user has no
 character, so they get plain prompt-to-image. `/last` resends the newest
-picture, which also recovers deliveries lost when the bot restarts.
+picture, which also recovers deliveries lost when the bot restarts. Each photo
+caption includes the render time (`⏱ 63.4s`); `/status` shows it too.
 
 Run the backend as **one process** (`uvicorn` default). The queue and the SQLite
 writer are per-process; scaling to several API instances needs Postgres and a

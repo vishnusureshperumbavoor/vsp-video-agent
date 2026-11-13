@@ -98,6 +98,7 @@ def test_image_job_runs_and_appears_in_the_gallery(client) -> None:
     done = client.get(f"/api/images/{job['id']}", headers=auth()).json()
     assert done["status"] == "completed"
     assert done["image_url"] == f"/images/7/{job['id']}.png"
+    assert done["generation_seconds"] is not None
     assert client.get("/api/images", headers=auth()).json()[0]["id"] == job["id"]
 
 

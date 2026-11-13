@@ -73,6 +73,7 @@ def test_completed_job_is_saved_and_served(tmp_path: Path) -> None:
     stored = service.get_job(7, job.id)
     assert stored.status == "completed"
     assert stored.image_url == f"/images/7/{job.id}.png"
+    assert stored.generation_seconds is not None
     assert (tmp_path / "images" / "7" / f"{job.id}.png").exists()
     assert fake.calls[0]["prompt"] == (
         "silver hair, green eyes, cinematic portrait, a rooftop at sunset"

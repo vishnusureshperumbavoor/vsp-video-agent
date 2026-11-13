@@ -66,6 +66,8 @@ class ImageJob:
     error: str | None = None
     created_at: float = 0.0
     updated_at: float = 0.0
+    started_at: float | None = None
+    generation_seconds: float | None = None
 
     @classmethod
     def create(
@@ -94,18 +96,29 @@ class ImageJob:
         )
 
     def mark_running(self, now: float | None = None) -> None:
-        self._transition("running", now)
+        moment = time.time() if now is None else now
+        if self.started_at is None:
+            self.started_at = moment
+        self._transition("running", moment)
 
     def mark_completed(self, image_url: str, now: float | None = None) -> None:
         if not image_url:
             raise InvalidJob("image_url is required")
+        moment = time.time() if now is None else now
+        self._record_duration(moment)
         self.image_url = image_url
         self.error = None
-        self._transition("completed", now)
+        self._transition("completed", moment)
 
     def mark_failed(self, error: str, now: float | None = None) -> None:
+        moment = time.time() if now is None else now
+        self._record_duration(moment)
         self.error = error or "generation failed"
-        self._transition("failed", now)
+        self._transition("failed", moment)
+
+    def _record_duration(self, moment: float) -> None:
+        if self.started_at is not None and self.generation_seconds is None:
+            self.generation_seconds = round(moment - self.started_at, 1)
 
     def _transition(self, status: str, now: float | None = None) -> None:
         if status not in STATUSES:

@@ -71,9 +71,11 @@ def test_job_moves_through_its_states() -> None:
     job.mark_running(now=11.0)
     assert job.status == "running"
     assert job.updated_at == 11.0
-    job.mark_completed("/images/7/a.png", now=12.0)
+    assert job.started_at == 11.0
+    job.mark_completed("/images/7/a.png", now=13.0)
     assert job.status == "completed"
     assert job.image_url == "/images/7/a.png"
+    assert job.generation_seconds == 2.0
     job.mark_failed("GPU offline", now=13.0)
     assert job.status == "failed"
     assert job.error == "GPU offline"

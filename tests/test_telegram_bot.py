@@ -21,6 +21,7 @@ from telegram_bot import (  # noqa: E402
     BotError,
     character_commands_allowed,
     describe_characters,
+    format_caption,
     http_json,
     is_allowed,
     parse_character,
@@ -62,6 +63,21 @@ def test_describe_characters_lists_ids() -> None:
 
     assert "Ava" in text
     assert "abc123" in text
+
+
+def test_caption_includes_generation_time() -> None:
+    text = format_caption({"prompt": "a cat", "generation_seconds": 12.3})
+
+    assert "a cat" in text
+    assert "12.3s" in text
+
+
+def test_caption_falls_back_to_the_job_timestamps() -> None:
+    text = format_caption(
+        {"prompt": "a cat", "started_at": 100.0, "updated_at": 104.5}
+    )
+
+    assert "4.5s" in text
 
 
 def test_empty_allowlist_accepts_any_chat() -> None:

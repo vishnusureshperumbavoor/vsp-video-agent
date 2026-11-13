@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS image_jobs (
     image_url TEXT,
     error TEXT,
     created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    started_at REAL,
+    generation_seconds REAL
 );
 CREATE INDEX IF NOT EXISTS image_jobs_owner ON image_jobs (owner_id, created_at);
 CREATE INDEX IF NOT EXISTS image_jobs_status ON image_jobs (status, created_at);
@@ -61,6 +63,15 @@ class Store:
         self._lock = threading.Lock()
         with closing(self._connect()) as conn, conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Add columns introduced after the first beta database was created."""
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(image_jobs)")}
+        for name in ("started_at", "generation_seconds"):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE image_jobs ADD COLUMN {name} REAL")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=10)
@@ -140,8 +151,8 @@ class Store:
             conn.execute(
                 "INSERT INTO image_jobs "
                 "(id, owner_id, character_id, prompt, size, steps, seed, status, "
-                "image_url, error, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "image_url, error, created_at, updated_at, started_at, generation_seconds) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job.id,
                     job.owner_id,
@@ -155,15 +166,25 @@ class Store:
                     job.error,
                     job.created_at,
                     job.updated_at,
+                    job.started_at,
+                    job.generation_seconds,
                 ),
             )
 
     def update_job(self, job: ImageJob) -> None:
         with self._connection() as conn:
             conn.execute(
-                "UPDATE image_jobs SET status = ?, image_url = ?, error = ?, updated_at = ? "
-                "WHERE id = ?",
-                (job.status, job.image_url, job.error, job.updated_at, job.id),
+                "UPDATE image_jobs SET status = ?, image_url = ?, error = ?, updated_at = ?, "
+                "started_at = ?, generation_seconds = ? WHERE id = ?",
+                (
+                    job.status,
+                    job.image_url,
+                    job.error,
+                    job.updated_at,
+                    job.started_at,
+                    job.generation_seconds,
+                    job.id,
+                ),
             )
 
     def get_job(self, job_id: str) -> ImageJob | None:

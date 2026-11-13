@@ -188,6 +188,19 @@ def describe_characters(characters: list[dict]) -> str:
     return "Your characters:\n" + "\n".join(lines)
 
 
+def format_caption(job: dict, limit: int = 900) -> str:
+    """Prompt plus the render time, for the photo caption."""
+    prompt = (job.get("prompt") or "")[:limit]
+    seconds = job.get("generation_seconds")
+    if seconds is None:
+        start = job.get("started_at") or job.get("created_at") or 0
+        end = job.get("updated_at") or 0
+        seconds = round(end - start, 1) if end and start else None
+    if seconds is None:
+        return prompt
+    return f"{prompt}\n⏱ {seconds:.1f}s"
+
+
 def wait_for_image(backend: Backend, owner_id: int, job_id: str) -> dict:
     deadline = time.time() + POLL_SECONDS
     while time.time() < deadline:
@@ -215,7 +228,7 @@ def deliver(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, job_id
         url = job.get("image_url") or ""
         if url.startswith("/"):
             url = f"{backend.base_url}{url}"
-        bot.send_photo_bytes(chat_id, fetch_image(url), job.get("prompt", "")[:900])
+        bot.send_photo_bytes(chat_id, fetch_image(url), format_caption(job))
     except BotError as exc:
         bot.send_message(chat_id, str(exc))
 
@@ -267,7 +280,11 @@ def handle_message(
         jobs = backend.list_images(owner_id)[:5]
         if not jobs:
             return chat_id, "No pictures yet.", None
-        lines = [f"{item['status']}: {item['prompt'][:70]}" for item in jobs]
+        lines = []
+        for item in jobs:
+            seconds = item.get("generation_seconds")
+            timing = f" ({seconds:.0f}s)" if seconds is not None else ""
+            lines.append(f"{item['status']}: {item['prompt'][:60]}{timing}")
         return chat_id, "\n".join(lines), None
     return chat_id, PUBLIC_HELP, None
 
