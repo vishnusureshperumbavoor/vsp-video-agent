@@ -66,6 +66,14 @@ def test_build_command_includes_lora_only_when_present() -> None:
     assert "--lora-dir" not in without
 
 
+def test_the_axiomofmind_adapter_is_the_default() -> None:
+    args = args_for()
+
+    assert runner.LORA_REPO == "axiomofmind/Moss-image-nsfw-uncensored-lora"
+    assert args.skip_lora is False
+    assert args.lora_scale == 0.8
+
+
 def test_build_command_passes_negative_prompt_when_set() -> None:
     command = runner.build_command(args_for(negative_prompt="blurry"), "")
 

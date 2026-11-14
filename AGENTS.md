@@ -305,9 +305,10 @@ Rules:
 ## 🖼️ MOSS-Image on JarvisLabs
 
 `scripts/moss_image_runner.py` generates still images with
-`OpenMOSS-Team/MOSS-Image-SFT` plus an optional LoRA. It is a **separate model
-family** — text-to-image, not Wan — and is intentionally not wired into the
-FastAPI app or `server/wan_worker.py`.
+`OpenMOSS-Team/MOSS-Image-SFT` plus the `axiomofmind/Moss-image-nsfw-uncensored-lora`
+adapter (on by default at scale 0.8; `--skip-lora` runs the base model). It is a
+**separate model family** — text-to-image, not Wan — and is intentionally not
+wired into the FastAPI app or `server/wan_worker.py`.
 
 Rules:
 

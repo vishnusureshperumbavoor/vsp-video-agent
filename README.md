@@ -117,10 +117,13 @@ longer input.
 
 `scripts/moss_image_runner.py` generates **still images** with
 [`OpenMOSS-Team/MOSS-Image-SFT`](https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT)
-and an optional LoRA. It is deliberately **not** part of the video pipeline:
-MOSS-Image is a text-to-image model, so nothing in `server/wan_worker.py` or the
-FastAPI app can load it. Same rail as the Wan Animate runner — provision an A100,
-run detached, fetch the PNGs, destroy in `finally`.
+plus the
+[`axiomofmind/Moss-image-nsfw-uncensored-lora`](https://huggingface.co/axiomofmind/Moss-image-nsfw-uncensored-lora)
+adapter, which is **on by default** at scale 0.8. It is deliberately **not** part
+of the video pipeline: MOSS-Image is a text-to-image model, so nothing in
+`server/wan_worker.py` or the FastAPI app can load it. Same rail as the Wan
+Animate runner — provision an A100, run detached, fetch the PNGs, destroy in
+`finally`.
 
 ```bash
 # Plan and cost only
@@ -137,7 +140,7 @@ run detached, fetch the PNGs, destroy in `finally`.
 | :--- | :--- |
 | `--count` | number of images (each gets `--seed + index`) |
 | `--size` | square side; must be a multiple of 16 |
-| `--lora-scale` / `--skip-lora` | adapter weight, or run the base model |
+| `--lora-scale` / `--skip-lora` | adapter weight (default 0.8), or run the base model alone |
 | `--machine-id` | adopt a running instance instead of provisioning |
 | `--keep-instance` | leave it up for a second run |
 
@@ -315,9 +318,11 @@ Leave `IMAGE_CUSTOM_PIPELINE` empty for a plain diffusers repo such as
 `black-forest-labs/FLUX.1-schnell`. Set `IMAGE_DEFAULT_STEPS=50` for MOSS and
 `4` for FLUX.1-schnell; the bot uses this value when it queues a job.
 
-### Optional LoRA adapter
+### MOSS LoRA adapter
 
-`scripts/image_server.py` can wrap the MOSS transformer with a LoRA adapter:
+`scripts/image_server.py` can wrap the MOSS transformer with the same adapter
+the runner uses
+([`axiomofmind/Moss-image-nsfw-uncensored-lora`](https://huggingface.co/axiomofmind/Moss-image-nsfw-uncensored-lora)):
 
 ```bash
 IMAGE_LORA_DIR=/home/jl_fs/lora/moss   # directory with pytorch_lora_weights.safetensors
