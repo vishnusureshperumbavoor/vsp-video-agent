@@ -23,6 +23,7 @@ import urllib.request
 from pathlib import Path
 
 import requests
+from job_text import image_caption, job_label
 from video_jobs import VIDEO_POLL_SECONDS, allow_video, format_video_caption
 
 MAX_INFLIGHT = 4
@@ -238,19 +239,6 @@ def describe_characters(characters: list[dict]) -> str:
     return "Your characters:\n" + "\n".join(lines)
 
 
-def format_caption(job: dict, limit: int = 900) -> str:
-    """Prompt plus the render time, for the photo caption."""
-    prompt = (job.get("prompt") or "")[:limit]
-    seconds = job.get("generation_seconds")
-    if seconds is None:
-        start = job.get("started_at") or job.get("created_at") or 0
-        end = job.get("updated_at") or 0
-        seconds = round(end - start, 1) if end and start else None
-    if seconds is None:
-        return prompt
-    return f"{prompt}\n⏱ {seconds:.1f}s"
-
-
 def _poll_job(fetch, job_id: str, timeout: int, timeout_message: str) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -306,13 +294,22 @@ def deliver_video(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, 
         bot.send_message(chat_id, str(exc))
 
 
+def _characters(backend: Backend, owner_id: int) -> list[dict]:
+    """Character list for captions; a backend hiccup must not hide the image."""
+    try:
+        return backend.list_characters(owner_id)
+    except BotError:
+        return []
+
+
 def deliver(bot: Telegram, backend: Backend, chat_id: int, owner_id: int, job_id: str) -> None:
     try:
         job = wait_for_image(backend, owner_id, job_id)
         url = job.get("image_url") or ""
         if url.startswith("/"):
             url = f"{backend.base_url}{url}"
-        bot.send_photo_bytes(chat_id, fetch_image(url), format_caption(job))
+        caption = image_caption(job, _characters(backend, owner_id))
+        bot.send_photo_bytes(chat_id, fetch_image(url), caption)
     except BotError as exc:
         bot.send_message(chat_id, str(exc))
 
@@ -388,11 +385,12 @@ def handle_message(
         jobs = backend.list_images(owner_id)[:5]
         if not jobs:
             return _reply(chat_id, "No pictures yet.")
+        characters = _characters(backend, owner_id)
         lines = []
         for item in jobs:
             seconds = item.get("generation_seconds")
             timing = f" ({seconds:.0f}s)" if seconds is not None else ""
-            lines.append(f"{item['status']}: {item['prompt'][:60]}{timing}")
+            lines.append(f"{item['status']}: {job_label(item, characters)}{timing}")
         return _reply(chat_id, "\n".join(lines))
     return _reply(chat_id, PUBLIC_HELP)
 
