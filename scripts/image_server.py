@@ -135,7 +135,8 @@ async def lifespan(_app: FastAPI):
     if not API_TOKEN:
         raise RuntimeError("set IMAGE_API_TOKEN before starting the service")
     global pipe
-    pipe = await asyncio.to_thread(load_pipeline)
+    if MODEL_ID:
+        pipe = await asyncio.to_thread(load_pipeline)
     yield
     pipe = None
 

@@ -11,6 +11,12 @@ TRAINER_URL = (
     "examples/dreambooth/train_dreambooth_lora_flux2_klein.py"
 )
 
+APPEARANCE = (
+    "photorealistic beautiful blonde Mexican woman in her mid-20s, "
+    "thick curvy hourglass figure, long wavy honey-blonde hair, warm tan skin, "
+    "brown eyes, glossy lips, natural makeup, soft facial features"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class TrainSettings:
@@ -29,10 +35,7 @@ class TrainSettings:
 
 
 def build_command(settings: TrainSettings) -> list[str]:
-    prompt = (
-        f"{settings.trigger}, a photorealistic blonde Mexican woman in her mid-20s, "
-        "natural makeup, Instagram lifestyle photo"
-    )
+    prompt = f"{settings.trigger}, {APPEARANCE}, Instagram lifestyle photo"
     return [
         "accelerate",
         "launch",
@@ -58,7 +61,7 @@ def build_command(settings: TrainSettings) -> list[str]:
         "--mixed_precision=bf16",
         "--offload",
         f"--seed={settings.seed}",
-        "--report_to=none",
+        "--report_to=tensorboard",
         "--checkpointing_steps=200",
     ]
 
@@ -69,6 +72,7 @@ def write_script(settings: TrainSettings, path: str) -> Path:
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
         "cd /home/app\n"
+        "export HF_HOME=/home/jl_fs/hf\n"
         f"if [ ! -f {shlex.quote(settings.trainer)} ]; then\n"
         f"  curl -L {TRAINER_URL} -o {shlex.quote(settings.trainer)}\n"
         "fi\n"

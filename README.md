@@ -373,7 +373,11 @@ python scripts/character_cli.py train --dataset dataset/ \
 The trainer is the official diffusers `train_dreambooth_lora_flux2_klein.py`.
 It uses `--use_8bit_adam`, gradient checkpointing, latent caching and CPU
 offload because FP8 training requires compute capability 8.9+, which the A100
-does not have.
+does not have. The trainer reads every file in `--instance_data_dir`, so copy the
+curated PNGs into an images-only folder first (the sidecar `.txt` captions will
+otherwise be opened as images). The generated launcher sets
+`HF_HOME=/home/jl_fs/hf` to reuse cached FLUX.2 weights and logs to TensorBoard
+(`pip install tensorboard` in the training venv).
 
 ### Image endpoints
 
