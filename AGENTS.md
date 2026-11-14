@@ -55,6 +55,8 @@ at the wrong layer — use `tests/fakes.py` instead.
 | MiniMax-H3 video+audio CLI | `scripts/h3_video.py` + `scripts/minimax_h3/` | a router |
 | H3 runbook | `docs/minimax-h3.md` | a model class |
 | Character LoRA runbook | `docs/character-lora.md` | a router |
+| Photorealism prompt rules | `scripts/realism.py` | a router |
+| Realism runbook | `docs/ai-realism.md` | a model class |
 | Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
 
 `server/main.py` is **wiring only**. It is already at its cap: if you need a new
@@ -111,6 +113,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_video_tools.py` | video payloads, CLI parsing, job formatting |
 | `tests/test_story_tools.py` | story parsing, prompts, SRT timing |
 | `tests/test_h3_workflow.py` | H3 frame grid, graph wiring, cost estimate |
+| `tests/test_realism.py` | dialogue tags, photo suffixes, plastic-word audit |
 
 Add the regression test in the cheapest layer that can catch it.
 
@@ -196,6 +199,18 @@ Rules:
    file as `<folder>/name`. Pass `local_dir=models` instead.
 4. **Verify the audio.** An AAC stream can be silent. Check `volumedetect`;
    `mean_volume` near `-91 dB` means empty.
+
+## 📷 Photorealism
+
+Both models default to smooth, plastic portraits. `scripts/realism.py` holds the
+measured photo suffixes and the word blacklist; `docs/ai-realism.md` has the
+full table and the artifact checklist.
+
+1. Stills: **8 steps**, identity LoRA **scale 0.7**. Four steps is plastic.
+2. H3 dialogue: **20 steps** and turbo adapter **0**. Eight steps blurs speech.
+3. Describe the camera, not the vibe: `85mm, f/1.8, window light, film grain`
+   beats `beautiful, perfect, Instagram`.
+4. Verify dialogue by transcribing it (faster-whisper), not by watching lips.
 
 ## 🎬 Micro-story videos (Level 1)
 

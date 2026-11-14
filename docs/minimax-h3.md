@@ -40,6 +40,22 @@ Output goes to `public/videos/` (git-ignored). Size presets that keep the
 32-pixel grid: `608x352`, `736x416` (fast), `960x544` (~2.3× slower than
 `1344x768`, but still practical).
 
+### Dialogue and realism
+
+H3 renders words only when they are tagged. `--dialogue` wraps the line in
+`<d>[English] ...</d>` and switches to **20 steps** with the turbo adapter
+**off**, because 8-step turbo blurs speech:
+
+```bash
+.venv/bin/python scripts/h3_video.py "a woman at a kitchen table, rain on the window" \
+  --dialogue "Hey, it's me. I just got home. Call me back, okay?" \
+  --seconds 5 --size 448x768 --raw \
+  --machine-id 574407 --host 217.18.55.15
+```
+
+`--raw` appends 35mm film cues from `scripts/realism.py`. See
+`docs/ai-realism.md` for the measured settings and the artifact checklist.
+
 ## Measured
 
 | Setting | Result |

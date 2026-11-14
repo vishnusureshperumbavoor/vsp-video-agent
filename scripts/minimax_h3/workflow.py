@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import math
 
+import realism
+
 MODEL_REPO = "Comfy-Org/MiniMax-H3"
 
 # Quantized Comfy-Org repack. int8_convrot needs torch with CUDA 13.
@@ -48,6 +50,36 @@ def validate_size(width: int, height: int) -> tuple[int, int]:
         if value < 32 or value % 32:
             raise ValueError(f"{value} is not a positive multiple of 32")
     return width, height
+
+
+def compose_prompt(
+    scene: str,
+    dialogue_line: str = "",
+    language: str = "English",
+    raw: bool = False,
+) -> str:
+    """Build an H3 prompt: scene, optional spoken line, optional film cues."""
+    prompt = scene.strip()
+    if not prompt:
+        raise ValueError("prompt is empty")
+    if dialogue_line:
+        prompt = f"{prompt} {realism.dialogue(dialogue_line, language)}"
+    if raw:
+        prompt = realism.enhance(prompt, "video")
+    return prompt
+
+
+def resolve_settings(
+    dialogue_line: str = "",
+    steps: int | None = None,
+    lora_strength: float | None = None,
+) -> tuple[int, float]:
+    """Dialogue needs more steps and no turbo adapter; motion defaults are fine."""
+    resolved_steps = steps if steps is not None else (20 if dialogue_line else DEFAULT_STEPS)
+    resolved_lora = (
+        lora_strength if lora_strength is not None else (0.0 if dialogue_line else 1.0)
+    )
+    return resolved_steps, resolved_lora
 
 
 def build_graph(

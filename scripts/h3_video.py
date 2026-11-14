@@ -31,17 +31,19 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import realism  # noqa: E402
 from instance_adopt import adopt_instance  # noqa: E402
 from minimax_h3.workflow import (  # noqa: E402
     A100_INR_PER_HOUR,
     DEFAULT_HEIGHT,
     DEFAULT_SECONDS,
-    DEFAULT_STEPS,
     DEFAULT_WIDTH,
     MODEL_FILES,
     MODEL_REPO,
     build_graph,
+    compose_prompt,
     estimate,
+    resolve_settings,
     snap_length,
 )
 
@@ -77,9 +79,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("prompt")
     parser.add_argument("--seconds", type=float, default=DEFAULT_SECONDS)
     parser.add_argument("--size", default=f"{DEFAULT_WIDTH}x{DEFAULT_HEIGHT}")
-    parser.add_argument("--steps", type=int, default=DEFAULT_STEPS)
+    parser.add_argument("--steps", type=int, default=None)
     parser.add_argument("--seed", type=int, default=20260803)
-    parser.add_argument("--lora-strength", type=float, default=1.0)
+    parser.add_argument("--lora-strength", type=float, default=None)
+    parser.add_argument("--dialogue", default="", help="Spoken line; wrapped in H3's <d> tag")
+    parser.add_argument("--language", default="English")
+    parser.add_argument("--raw", action="store_true", help="Append 35mm film realism cues")
     parser.add_argument("--machine-id", help="Adopt a running instance")
     parser.add_argument("--host", default="", help="SSH host, for when the instance list lags")
     parser.add_argument("--port", type=int, default=22)
@@ -291,22 +296,28 @@ def main() -> int:
     args = parse_args()
     width, height = parse_size(args.size)
     length = snap_length(args.seconds)
-    minutes, cost = estimate(args.seconds, width, height, args.steps)
+    steps, lora_strength = resolve_settings(args.dialogue, args.steps, args.lora_strength)
+    prompt = compose_prompt(args.prompt, args.dialogue, args.language, args.raw)
+    minutes, cost = estimate(args.seconds, width, height, steps)
 
     log("MiniMax-H3 plan")
-    log(f"  size     {width}x{height}, {length} frames (~{length / 24:.1f}s), {args.steps} steps")
+    log(f"  size     {width}x{height}, {length} frames (~{length / 24:.1f}s), {steps} steps")
     log("  audio    native stereo, 32 kHz, generated in the same pass")
+    if args.dialogue:
+        log(f"  dialogue {args.language}: {args.dialogue[:70]}")
     log(f"  estimate ~{minutes:.1f} min, ~{cost:.0f} INR on an A100")
     log(f"  output   {args.out_dir}")
+    for warning in realism.audit(prompt):
+        log(f"  note     {warning}")
 
     graph = build_graph(
-        args.prompt,
+        prompt,
         width=width,
         height=height,
         length=length,
-        steps=args.steps,
+        steps=steps,
         seed=args.seed,
-        lora_strength=args.lora_strength,
+        lora_strength=lora_strength,
     )
     if args.dry_run:
         print(json.dumps(graph, indent=2)[:1200])

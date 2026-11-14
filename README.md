@@ -136,6 +136,16 @@ Measured: 5.2 s at 736×416, 8 steps, **44 s** end-to-end, stereo AAC 32 kHz.
 See `docs/minimax-h3.md` for the quantization trade-offs, frame grid, and the
 SCP/`--host` pitfalls.
 
+For photoreal output, `docs/ai-realism.md` has the measured settings: 8 steps at
+LoRA 0.7 for stills, 20 steps with the turbo adapter off for dialogue, and the
+`--raw` / `--dialogue` flags on the runner.
+
+```bash
+.venv/bin/python scripts/h3_video.py "a woman at a kitchen table ..." \
+  --dialogue "Hey, it's me. I just got home. Call me back, okay?" \
+  --seconds 5 --size 448x768 --raw --machine-id <id> --host <ip>
+```
+
 ---
 
 ## MOSS-Image on JarvisLabs (A100)
