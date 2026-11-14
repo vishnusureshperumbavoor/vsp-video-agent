@@ -91,6 +91,7 @@ def build_graph(
     seed: int = DEFAULT_SEED,
     lora_strength: float = 1.0,
     prefix: str = "minimax_h3/video",
+    first_frame: str = "",
 ) -> dict:
     """Return a ComfyUI API graph (node id -> class_type + inputs)."""
     if not prompt.strip():
@@ -100,7 +101,7 @@ def build_graph(
     if steps < 1:
         raise ValueError("steps must be positive")
     validate_size(width, height)
-    return {
+    graph = {
         "1": {
             "class_type": "UNETLoader",
             "inputs": {"unet_name": UNET, "weight_dtype": "default"},
@@ -180,6 +181,10 @@ def build_graph(
             },
         },
     }
+    if first_frame:
+        graph["16"] = {"class_type": "LoadImage", "inputs": {"image": first_frame}}
+        graph["6"]["inputs"]["first_frame"] = ["16", 0]
+    return graph
 
 
 def estimate(seconds: float, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT,

@@ -85,6 +85,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dialogue", default="", help="Spoken line; wrapped in H3's <d> tag")
     parser.add_argument("--language", default="English")
     parser.add_argument("--raw", action="store_true", help="Append 35mm film realism cues")
+    parser.add_argument("--first-frame", default="", help="PNG to pin as the first frame")
     parser.add_argument("--machine-id", help="Adopt a running instance")
     parser.add_argument("--host", default="", help="SSH host, for when the instance list lags")
     parser.add_argument("--port", type=int, default=22)
@@ -218,10 +219,25 @@ def put_text(client: JarvisLabsClient, machine_id: str, remote_path: str, text: 
     block forever on a passphrase prompt. Job files are a few KB; base64 over an
     already-working ``ssh`` channel is both faster and safe.
     """
-    payload = base64.b64encode(text.encode()).decode("ascii")
-    code, out = remote(client, machine_id, f"echo {payload} | base64 -d > {remote_path}")
-    if code != 0:
-        die(f"could not write {remote_path}:\n{out[-500:]}")
+    put_bytes(client, machine_id, remote_path, text.encode())
+
+
+def put_bytes(
+    client: JarvisLabsClient, machine_id: str, remote_path: str, data: bytes
+) -> None:
+    """Upload bytes in chunks so a single command never hits ARG_MAX."""
+    payload = base64.b64encode(data).decode("ascii")
+    # Linux caps a single argument at ~128 KB (MAX_ARG_STRLEN), and the whole
+    # remote command is one argument to ssh, so stay well under it.
+    chunk_size = 80_000
+    for index in range(0, len(payload), chunk_size):
+        chunk = payload[index : index + chunk_size]
+        append = ">>" if index else ">"
+        code, out = remote(
+            client, machine_id, f"echo {chunk} | base64 -d {append} {remote_path}"
+        )
+        if code != 0:
+            die(f"could not write {remote_path}:\n{out[-500:]}")
 
 
 def get_bytes(client: JarvisLabsClient, machine_id: str, remote_path: str) -> bytes | None:
@@ -299,6 +315,9 @@ def main() -> int:
     steps, lora_strength = resolve_settings(args.dialogue, args.steps, args.lora_strength)
     prompt = compose_prompt(args.prompt, args.dialogue, args.language, args.raw)
     minutes, cost = estimate(args.seconds, width, height, steps)
+    local_frame = Path(args.first_frame) if args.first_frame else None
+    if local_frame and not local_frame.exists():
+        die(f"first frame not found: {local_frame}")
 
     log("MiniMax-H3 plan")
     log(f"  size     {width}x{height}, {length} frames (~{length / 24:.1f}s), {steps} steps")
@@ -307,6 +326,8 @@ def main() -> int:
         log(f"  dialogue {args.language}: {args.dialogue[:70]}")
     log(f"  estimate ~{minutes:.1f} min, ~{cost:.0f} INR on an A100")
     log(f"  output   {args.out_dir}")
+    if local_frame:
+        log(f"  first    {local_frame.name}")
     for warning in realism.audit(prompt):
         log(f"  note     {warning}")
 
@@ -318,6 +339,7 @@ def main() -> int:
         steps=steps,
         seed=args.seed,
         lora_strength=lora_strength,
+        first_frame=local_frame.name if local_frame else "",
     )
     if args.dry_run:
         print(json.dumps(graph, indent=2)[:1200])
@@ -340,6 +362,17 @@ def main() -> int:
             if missing:
                 die(f"ComfyUI is missing {len(missing)} model files; rerun with --setup")
             start_server(client, machine_id)
+
+        if local_frame:
+            remote_name = f"h3_{machine_id}_{int(time.time())}.png"
+            log(f"uploading {local_frame.name} ...")
+            put_bytes(
+                client,
+                machine_id,
+                f"{COMFY_DIR}/input/{remote_name}",
+                local_frame.read_bytes(),
+            )
+            graph["16"]["inputs"]["image"] = remote_name
 
         started = time.time()
         files = submit(client, machine_id, graph, args.timeout)

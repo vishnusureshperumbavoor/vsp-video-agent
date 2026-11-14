@@ -78,3 +78,15 @@ def test_every_model_file_is_folder_scoped() -> None:
     for path, size in workflow.MODEL_FILES.items():
         assert path.split("/")[0] in {"diffusion_models", "text_encoders", "vae", "loras"}
         assert size > 0
+
+
+def test_graph_pins_a_first_frame() -> None:
+    graph = workflow.build_graph("a room", first_frame="frame.png")
+
+    assert graph["16"]["class_type"] == "LoadImage"
+    assert graph["16"]["inputs"]["image"] == "frame.png"
+    assert graph["6"]["inputs"]["first_frame"] == ["16", 0]
+
+
+def test_graph_has_no_loader_without_a_first_frame() -> None:
+    assert "16" not in workflow.build_graph("a room")
