@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from instance_adopt import adopt_instance  # noqa: E402
+
 from server.jarvis import JarvisLabsClient  # noqa: E402
 
 REMOTE_DIR = "/home/vsp_jobs"
@@ -93,20 +95,8 @@ def estimate(args: argparse.Namespace) -> tuple[float, float]:
 def ensure_instance(client: JarvisLabsClient, args: argparse.Namespace) -> tuple[str, bool]:
     if args.machine_id:
         wanted = str(args.machine_id)
-        for inst in client.list_instances():
-            if str(inst.get("machine_id")) != wanted:
-                continue
-            client.register_instance(
-                host=inst["host"],
-                machine_id=wanted,
-                name=inst.get("name", "moss"),
-                user=inst.get("user", "root"),
-                port=int(inst.get("port", 22)),
-                gpu_type=inst.get("gpu_type", "Unknown"),
-                status=inst.get("status", "Running"),
-                jupyter_url=inst.get("jupyter_url"),
-                password=inst.get("password", ""),
-            )
+        inst = adopt_instance(client, wanted, "moss")
+        if inst is not None:
             log(f"adopting instance {wanted} ({inst.get('host')})")
             return wanted, False
         die(f"instance {wanted} not found; `jl list` shows what is running")

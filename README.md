@@ -113,6 +113,31 @@ longer input.
 
 ---
 
+## MiniMax H3: video with native audio (A100)
+
+`scripts/h3_video.py` generates 4–15 s clips where the **soundtrack is produced
+in the same denoising pass** as the picture—no TTS or foley step. It uses the
+Comfy-Org quantized repack (~42 GB) because the bf16 model is 124 GB.
+
+```bash
+# plan only
+.venv/bin/python scripts/h3_video.py "a saxophonist in the rain" --dry-run
+
+# first run on a fresh instance
+.venv/bin/python scripts/h3_video.py "a saxophonist in the rain" \
+  --machine-id 574393 --host 217.18.55.180 --setup --yes
+
+# later runs
+.venv/bin/python scripts/h3_video.py "a saxophonist in the rain" \
+  --machine-id 574393 --host 217.18.55.180 --pause
+```
+
+Measured: 5.2 s at 736×416, 8 steps, **44 s** end-to-end, stereo AAC 32 kHz.
+See `docs/minimax-h3.md` for the quantization trade-offs, frame grid, and the
+SCP/`--host` pitfalls.
+
+---
+
 ## MOSS-Image on JarvisLabs (A100)
 
 `scripts/moss_image_runner.py` generates **still images** with
@@ -385,6 +410,10 @@ otherwise be opened as images). The generated launcher sets
 (`pip install tensorboard` in the training venv).
 
 ### Using the trained LoRA from Telegram
+
+Training settings, the measured realism comparison (4/8/12 steps, scales,
+checkpoints) and the uncensored options are written up in
+`docs/character-lora.md`.
 
 Once a LoRA exists, the GPU service can serve it as a text-to-image endpoint and
 the backend can route `/imagine` through it:

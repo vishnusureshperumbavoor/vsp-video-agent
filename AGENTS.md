@@ -52,6 +52,9 @@ at the wrong layer — use `tests/fakes.py` instead.
 | Video runbook | `docs/video-generation.md` | a model class |
 | Micro-story CLI | `scripts/story_video.py` | `server/` |
 | Story planning/rendering | `scripts/story/` | a router |
+| MiniMax-H3 video+audio CLI | `scripts/h3_video.py` + `scripts/minimax_h3/` | a router |
+| H3 runbook | `docs/minimax-h3.md` | a model class |
+| Character LoRA runbook | `docs/character-lora.md` | a router |
 | Provisioning/render logic | a package under `scripts/`, with a thin entrypoint | one giant `main()` |
 
 `server/main.py` is **wiring only**. It is already at its cap: if you need a new
@@ -107,6 +110,7 @@ hashes in `quality/budgets.json` in the same commit.
 | `tests/test_character_tools.py` | bootstrap scenes, captions, curation math, train command |
 | `tests/test_video_tools.py` | video payloads, CLI parsing, job formatting |
 | `tests/test_story_tools.py` | story parsing, prompts, SRT timing |
+| `tests/test_h3_workflow.py` | H3 frame grid, graph wiring, cost estimate |
 
 Add the regression test in the cheapest layer that can catch it.
 
@@ -160,6 +164,38 @@ python scripts/video_admin.py i2v face.png "she smiles at the camera"
 
 1.3B is the draft model. Use I2V from an approved character still for identity,
 or Wan Animate for motion transfer. Never expose SSH or ComfyUI publicly.
+
+## 🔊 Video with audio (MiniMax H3)
+
+`scripts/h3_video.py` renders 4–15 s clips with **native stereo audio** in the
+same pass. The model is too large for 40 GB in bf16, so the runner uses the
+Comfy-Org quantized repack (~42 GB) behind a local ComfyUI. The runbook, timings
+and pitfalls are in `docs/minimax-h3.md`.
+
+```bash
+# plan only
+.venv/bin/python scripts/h3_video.py "a saxophonist in the rain" --dry-run
+
+# first run: installs ComfyUI and pulls the weights
+.venv/bin/python scripts/h3_video.py "..." --machine-id 574393 --host 217.18.55.180 --setup --yes
+
+# later runs reuse the server, then pause billing
+.venv/bin/python scripts/h3_video.py "..." --machine-id 574393 --host 217.18.55.180 --pause
+```
+
+Rules:
+
+1. **Never transfer job files with `sync_up`/`sync_down`.** Those helpers call
+   `scp` without `BatchMode` or `-n` and hang forever on a key passphrase.
+   `h3_video.py` moves JSON and MP4s as base64 over `client.exec` (`ssh -n`).
+2. **`--host` is required when the API list lags.** After a resume, the new
+   machine ID may not appear in `list_instances()`; use the address from
+   `jl resume` and the CLI registers it directly.
+3. **Weights must sit directly in `models/<folder>/`.** `hf_hub_download` with
+   `local_dir=models/<folder>` nests the repo path and ComfyUI then lists the
+   file as `<folder>/name`. Pass `local_dir=models` instead.
+4. **Verify the audio.** An AAC stream can be silent. Check `volumedetect`;
+   `mean_volume` near `-91 dB` means empty.
 
 ## 🎬 Micro-story videos (Level 1)
 
