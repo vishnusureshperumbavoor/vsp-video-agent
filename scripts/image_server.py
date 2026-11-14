@@ -35,6 +35,9 @@ LORA_SCALE = float(os.environ.get("IMAGE_LORA_SCALE", "0.8"))
 REFERENCE_MODEL_ID = os.environ.get(
     "REFERENCE_MODEL_ID", "black-forest-labs/FLUX.2-klein-4B"
 )
+CHARACTER_LORA_DIR = os.environ.get("CHARACTER_LORA_DIR", "")
+CHARACTER_LORA_SCALE = float(os.environ.get("CHARACTER_LORA_SCALE", "0.7"))
+CHARACTER_TRIGGER = os.environ.get("CHARACTER_TRIGGER", "gbrla")
 SKIP_LAYERS = [
     int(value)
     for value in os.environ.get("IMAGE_SKIP_LAYERS", "22").split(",")
@@ -54,6 +57,9 @@ def load_reference_pipeline():
     pipeline = Flux2KleinPipeline.from_pretrained(
         REFERENCE_MODEL_ID, torch_dtype=torch.bfloat16
     )
+    if CHARACTER_LORA_DIR:
+        pipeline.load_lora_weights(CHARACTER_LORA_DIR, adapter_name="character")
+        pipeline.disable_lora()
     pipeline.enable_model_cpu_offload()
     return pipeline
 
@@ -195,6 +201,8 @@ def _edit(request: EditRequest, image) -> bytes:
     global reference_pipe
     if reference_pipe is None:
         reference_pipe = load_reference_pipeline()
+    if CHARACTER_LORA_DIR:
+        reference_pipe.disable_lora()
     result = reference_pipe(
         image=[image],
         prompt=request.prompt,
@@ -216,6 +224,44 @@ def _decode_reference(encoded: str):
     return Image.open(io.BytesIO(raw)).convert("RGB")
 
 
+def _render_character(request: GenerateRequest) -> bytes:
+    import torch
+
+    global reference_pipe
+    if reference_pipe is None:
+        reference_pipe = load_reference_pipeline()
+    if CHARACTER_LORA_DIR:
+        reference_pipe.enable_lora()
+        reference_pipe.set_adapters(
+            ["character"], adapter_weights=[CHARACTER_LORA_SCALE]
+        )
+    prompt = request.prompt
+    if not prompt.lower().startswith(CHARACTER_TRIGGER):
+        prompt = f"{CHARACTER_TRIGGER}, {prompt}"
+    result = reference_pipe(
+        prompt=prompt,
+        height=request.height,
+        width=request.width,
+        num_inference_steps=request.steps,
+        guidance_scale=1.0,
+        generator=torch.Generator("cpu").manual_seed(request.seed),
+    )
+    buffer = io.BytesIO()
+    result.images[0].save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _require_auth(authorization: str) -> None:
+    if not secrets.compare_digest(authorization, f"Bearer {API_TOKEN}"):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+async def _encode_response(render, *args, **extra) -> dict:
+    async with lock:
+        data = await asyncio.to_thread(render, *args)
+    return {"image_b64": base64.b64encode(data).decode("ascii"), **extra}
+
+
 @app.get("/health")
 async def health() -> dict:
     return {
@@ -223,6 +269,8 @@ async def health() -> dict:
         "model": MODEL_ID,
         "edit_model": REFERENCE_MODEL_ID,
         "edit_ready": reference_pipe is not None,
+        "character_ready": reference_pipe is not None and bool(CHARACTER_LORA_DIR),
+        "character_lora": CHARACTER_LORA_DIR,
     }
 
 
@@ -231,12 +279,9 @@ async def generate(
     request: GenerateRequest,
     authorization: Annotated[str, Header()] = "",
 ) -> dict:
-    if not secrets.compare_digest(authorization, f"Bearer {API_TOKEN}"):
-        raise HTTPException(status_code=401, detail="unauthorized")
+    _require_auth(authorization)
     _validate(request)
-    async with lock:
-        data = await asyncio.to_thread(_render, request)
-    return {"image_b64": base64.b64encode(data).decode("ascii")}
+    return await _encode_response(_render, request)
 
 
 @app.post("/edit")
@@ -244,19 +289,28 @@ async def edit(
     request: EditRequest,
     authorization: Annotated[str, Header()] = "",
 ) -> dict:
-    if not secrets.compare_digest(authorization, f"Bearer {API_TOKEN}"):
-        raise HTTPException(status_code=401, detail="unauthorized")
+    _require_auth(authorization)
     _validate(request)
     try:
         image = _decode_reference(request.reference_b64)
     except (ValueError, OSError) as exc:
         raise HTTPException(status_code=400, detail="invalid reference image") from exc
-    async with lock:
-        data = await asyncio.to_thread(_edit, request, image)
-    return {
-        "image_b64": base64.b64encode(data).decode("ascii"),
-        "model": REFERENCE_MODEL_ID,
-    }
+    return await _encode_response(_edit, request, image, model=REFERENCE_MODEL_ID)
+
+
+@app.post("/character")
+async def character(
+    request: GenerateRequest,
+    authorization: Annotated[str, Header()] = "",
+) -> dict:
+    _require_auth(authorization)
+    _validate(request)
+    return await _encode_response(
+        _render_character,
+        request,
+        model=REFERENCE_MODEL_ID,
+        lora=CHARACTER_LORA_DIR,
+    )
 
 
 if __name__ == "__main__":

@@ -57,3 +57,19 @@ def test_success_returns_the_decoded_png(monkeypatch) -> None:
     )
 
     assert client().generate("a rooftop", 512, 4, 42) == b"png-bytes"
+
+
+def test_character_mode_uses_the_character_endpoint(monkeypatch) -> None:
+    captured = {}
+    encoded = base64.b64encode(b"png-bytes").decode("ascii")
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        return FakeResponse(200, {"image_b64": encoded})
+
+    monkeypatch.setenv("IMAGE_USE_CHARACTER", "1")
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    client().generate("a rooftop", 512, 8, 42)
+
+    assert captured["url"].endswith("/character")

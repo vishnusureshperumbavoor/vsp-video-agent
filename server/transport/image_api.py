@@ -7,6 +7,7 @@ token. Nothing here knows about SQLite, FastAPI or the Telegram bot.
 from __future__ import annotations
 
 import base64
+import os
 
 import requests
 
@@ -38,9 +39,12 @@ class ImageAPIClient:
         }
         if negative_prompt:
             payload["negative_prompt"] = negative_prompt
+        endpoint = (
+            "/character" if os.environ.get("IMAGE_USE_CHARACTER", "0") == "1" else "/generate"
+        )
         try:
             response = requests.post(
-                f"{self.base_url}/generate",
+                f"{self.base_url}{endpoint}",
                 json=payload,
                 headers={"Authorization": f"Bearer {self.token}"},
                 timeout=self.timeout,

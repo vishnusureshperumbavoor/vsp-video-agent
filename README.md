@@ -379,6 +379,32 @@ otherwise be opened as images). The generated launcher sets
 `HF_HOME=/home/jl_fs/hf` to reuse cached FLUX.2 weights and logs to TensorBoard
 (`pip install tensorboard` in the training venv).
 
+### Using the trained LoRA from Telegram
+
+Once a LoRA exists, the GPU service can serve it as a text-to-image endpoint and
+the backend can route `/imagine` through it:
+
+```bash
+# backend .env
+IMAGE_USE_CHARACTER=1
+IMAGE_DEFAULT_STEPS=8
+
+# GPU service /home/app/env
+CHARACTER_LORA_DIR=/home/jl_fs/character/lora
+CHARACTER_LORA_SCALE=0.7
+CHARACTER_TRIGGER=gbrla
+```
+
+Then in Telegram:
+
+```text
+/imagine at a rooftop bar at sunset, black dress, confident smile
+```
+
+The active character's appearance is prepended by the backend, and the GPU
+prepends the `gbrla` trigger. The LoRA defaults to 8 steps at scale 0.7.
+`IMAGE_USE_CHARACTER=0` restores the generic text-to-image path.
+
 ### Image endpoints
 
 | Method | Endpoint | Description |
