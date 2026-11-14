@@ -70,6 +70,8 @@ def cmd_render(args) -> int:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     out_path = Path(args.out or ROOT / "public" / "videos" / f"story_{stamp}.mp4")
     work_dir = Path(args.work_dir or ROOT / "public" / "stories" / f"story_{stamp}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
     try:
         from story.render import render_story
 
@@ -111,8 +113,8 @@ def parse_args(argv=None) -> argparse.Namespace:
         [
             ("--script", {"required": True}),
             ("--reference", {"required": True}),
-            ("--out"),
-            ("--work-dir"),
+            ("--out", {}),
+            ("--work-dir", {}),
             ("--voice", {"default": "en_US-amy-medium"}),
             ("--no-music", {"action": "store_true"}),
             ("--no-subtitles", {"action": "store_true"}),

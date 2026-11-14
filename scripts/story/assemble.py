@@ -107,8 +107,8 @@ def ambient_bed(duration: float, out: str | Path) -> Path:
 def _srt_filter(path: str | Path) -> str:
     escaped = str(path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
     style = (
-        "FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,"
-        "OutlineColour=&H00000000,Outline=2,Shadow=1,MarginV=70"
+        "FontName=DejaVu Sans,FontSize=10,PrimaryColour=&H00FFFFFF,"
+        "OutlineColour=&H00000000,Outline=2,Shadow=1,MarginV=20"
     )
     return f"subtitles={escaped}:force_style='{style}'"
 

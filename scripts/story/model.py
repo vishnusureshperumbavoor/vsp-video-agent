@@ -10,7 +10,10 @@ from pathlib import Path
 MAX_SCENES = 8
 MAX_TEXT = 800
 IDENTITY = "Keep the same woman's face, hair, skin tone and identity exactly."
-STYLE = "vertical 9:16 Instagram story frame, cinematic, fully clothed"
+STYLE = (
+    "vertical 9:16 cinematic film frame, shallow depth of field, fully clothed, "
+    "no text, no interface overlays"
+)
 
 
 class StoryError(ValueError):

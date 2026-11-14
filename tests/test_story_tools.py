@@ -87,3 +87,40 @@ def test_build_srt_uses_cumulative_durations() -> None:
 
 def test_estimate_seconds_is_positive() -> None:
     assert estimate_seconds(Scene("a", "a short line")) >= 2.0
+
+
+def test_render_cli_parses_its_flags() -> None:
+    from story_video import parse_args
+
+    args = parse_args(
+        [
+            "render",
+            "--script", "story.json",
+            "--reference", "face.png",
+            "--no-music",
+            "--steps", "8",
+        ]
+    )
+
+    assert args.command == "render"
+    assert args.script == "story.json"
+    assert args.no_music is True
+    assert args.steps == 8
+
+
+def test_find_piper_falls_back_to_the_interpreter_directory(tmp_path: Path, monkeypatch) -> None:
+    from story import tts
+
+    monkeypatch.setattr(tts.shutil, "which", lambda name: None)
+    fake = tmp_path / "piper"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    assert tts.find_piper(tmp_path / "python") == str(fake)
+
+
+def test_find_piper_returns_none_when_absent(tmp_path: Path, monkeypatch) -> None:
+    from story import tts
+
+    monkeypatch.setattr(tts.shutil, "which", lambda name: None)
+
+    assert tts.find_piper(tmp_path / "python") is None

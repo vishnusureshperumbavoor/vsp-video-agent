@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import wave
 from pathlib import Path
 
@@ -12,6 +13,19 @@ from huggingface_hub import hf_hub_download
 from story.model import StoryError
 
 VOICE_REPO = "rhasspy/piper-voices"
+
+
+def find_piper(executable: str | Path | None = None) -> str | None:
+    """Find the Piper CLI, including the one next to the running interpreter.
+
+    ``shutil.which`` only sees PATH. Running ``.venv/bin/python scripts/...``
+    does not put ``.venv/bin`` on PATH, so the console script was invisible.
+    """
+    found = shutil.which("piper")
+    if found:
+        return found
+    candidate = Path(executable or sys.executable).parent / "piper"
+    return str(candidate) if candidate.exists() else None
 
 
 def _voice_prefix(voice: str) -> str:
@@ -46,7 +60,7 @@ def synthesize(
     voice: str = "en_US-amy-medium",
     cache_dir: str | Path = "data/voices",
 ) -> Path:
-    piper = shutil.which("piper")
+    piper = find_piper()
     if not piper:
         raise StoryError(
             "piper is not installed; run `pip install -r requirements-story.txt`"
